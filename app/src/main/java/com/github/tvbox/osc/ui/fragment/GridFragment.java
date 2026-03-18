@@ -52,7 +52,7 @@ import java.util.Stack;
 /**
  * @author pj567
  * @date :2020/12/21
- * @description:
+ * @description: GridFragment，支持内置源
  */
 public class GridFragment extends BaseLazyFragment {
     private MovieSort.SortData sortData = null;
@@ -91,7 +91,7 @@ public class GridFragment extends BaseLazyFragment {
     protected int getLayoutResID() {
         return R.layout.fragment_grid;
     }
-    
+
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -106,18 +106,18 @@ public class GridFragment extends BaseLazyFragment {
         initViewModel();
         initData();
     }
-    
+
     @Override
     public void onSaveInstanceState(@NonNull Bundle outState) {
         super.onSaveInstanceState(outState);
-        outState.putString("sortDataJson", GsonUtils.toJson(sortData));        
+        outState.putString("sortDataJson", GsonUtils.toJson(sortData));
     }
 
-    private void changeView(String id,Boolean isFolder){
+    private void changeView(String id, Boolean isFolder){
         if(isFolder){
-            this.sortData.flag =style==null?"1":"2";
-        }else {
-            this.sortData.flag ="2";
+            this.sortData.flag = style==null?"1":"2";
+        } else {
+            this.sortData.flag = "2";
         }
         initView();
         this.sortData.id = id;
@@ -133,8 +133,8 @@ public class GridFragment extends BaseLazyFragment {
         return (sortData == null || sortData.flag == null || sortData.flag.length() == 0) ? '0' : sortData.flag.charAt(0);
     }
 
-    public boolean enableFastSearch() {  
-        return sortData.flag == null || sortData.flag.length() < 2 || (sortData.flag.charAt(1) == '1'); 
+    public boolean enableFastSearch() {
+        return sortData.flag == null || sortData.flag.length() < 2 || (sortData.flag.charAt(1) == '1');
     }
 
     private void saveCurrentView() {
@@ -165,13 +165,11 @@ public class GridFragment extends BaseLazyFragment {
         this.mGridView.setVisibility(View.VISIBLE);
         if (mGridView != null) {
             mGridView.requestFocus();
-            // 恢复焦点位置（原版缺失，增加触控稳定性）
             if (info.focusedView != null) {
                 info.focusedView.requestFocus();
             }
         }
 
-        // 修复触控：还原后重新绑定 Adapter 和所有事件
         if (gridAdapter != null) {
             mGridView.setAdapter(gridAdapter);
             rebindClickListeners();
@@ -181,52 +179,46 @@ public class GridFragment extends BaseLazyFragment {
     }
 
     private void rebindClickListeners() {
-        gridAdapter.setOnItemClickListener(new BaseQuickAdapter.OnItemClickListener() {
-            @Override
-            public void onItemClick(BaseQuickAdapter adapter, View view, int position) {
-                FastClickCheckUtil.check(view);
-                Movie.Video video = gridAdapter.getData().get(position);
-                if (video != null) {
-                    Bundle bundle = new Bundle();
-                    bundle.putString("id", video.id);
-                    bundle.putString("sourceKey", video.sourceKey);
-                    bundle.putString("title", video.name);
-                    if( video.tag !=null && (video.tag.equals("folder") || video.tag.equals("cover"))){
-                        focusedView = view;
-                        if(("12".indexOf(getUITag()) != -1)){
-                            changeView(video.id,video.tag.equals("folder"));
-                        }else {
-                            changeView(video.id,false);
+        gridAdapter.setOnItemClickListener((adapter, view, position) -> {
+            FastClickCheckUtil.check(view);
+            Movie.Video video = gridAdapter.getData().get(position);
+            if (video != null) {
+                Bundle bundle = new Bundle();
+                bundle.putString("id", video.id);
+                bundle.putString("sourceKey", video.sourceKey);
+                bundle.putString("title", video.name);
+                if(video.tag !=null && (video.tag.equals("folder") || video.tag.equals("cover"))){
+                    focusedView = view;
+                    if(("12".indexOf(getUITag()) != -1)){
+                        changeView(video.id,video.tag.equals("folder"));
+                    } else {
+                        changeView(video.id,false);
+                    }
+                } else {
+                    if (video.id == null || video.id.isEmpty() || video.id.startsWith("msearch:")) {
+                        if(Hawk.get(HawkConfig.FAST_SEARCH_MODE, false) && enableFastSearch()){
+                            jumpActivity(FastSearchActivity.class, bundle);
+                        } else {
+                            jumpActivity(SearchActivity.class, bundle);
                         }
                     } else {
-                        if (video.id == null || video.id.isEmpty() || video.id.startsWith("msearch:")) {
-                            if(Hawk.get(HawkConfig.FAST_SEARCH_MODE, false) && enableFastSearch()){
-                                jumpActivity(FastSearchActivity.class, bundle);
-                            }else {
-                                jumpActivity(SearchActivity.class, bundle);
-                            }
-                        } else {
-                            jumpActivity(DetailActivity.class, bundle);
-                        }
+                        jumpActivity(DetailActivity.class, bundle);
                     }
                 }
             }
         });
 
-        gridAdapter.setOnItemLongClickListener(new BaseQuickAdapter.OnItemLongClickListener() {
-            @Override
-            public boolean onItemLongClick(BaseQuickAdapter adapter, View view, int position) {
-                FastClickCheckUtil.check(view);
-                Movie.Video video = gridAdapter.getData().get(position);
-                if (video != null) {
-                    Bundle bundle = new Bundle();
-                    bundle.putString("id", video.id);
-                    bundle.putString("sourceKey", video.sourceKey);
-                    bundle.putString("title", video.name);
-                    jumpActivity(FastSearchActivity.class, bundle);
-                }
-                return true;
+        gridAdapter.setOnItemLongClickListener((adapter, view, position) -> {
+            FastClickCheckUtil.check(view);
+            Movie.Video video = gridAdapter.getData().get(position);
+            if (video != null) {
+                Bundle bundle = new Bundle();
+                bundle.putString("id", video.id);
+                bundle.putString("sourceKey", video.sourceKey);
+                bundle.putString("title", video.name);
+                jumpActivity(FastSearchActivity.class, bundle);
             }
+            return true;
         });
     }
 
@@ -247,7 +239,6 @@ public class GridFragment extends BaseLazyFragment {
             mGridView = v3;
             mGridView.setVisibility(View.VISIBLE);
 
-            // 修复触控：每次创建新 TvRecyclerView 后重新绑定 Adapter 和事件
             if (gridAdapter != null) {
                 mGridView.setAdapter(gridAdapter);
                 rebindClickListeners();
@@ -255,9 +246,7 @@ public class GridFragment extends BaseLazyFragment {
         }
         mGridView.setHasFixedSize(true);
 
-        // 禁用风格初始化（直播壳不需要，避免 NPE）
         style = null;
-
         gridAdapter = new GridAdapter(isFolederMode(), style);
         this.page = 1;
         this.maxPage = 1;
@@ -267,8 +256,6 @@ public class GridFragment extends BaseLazyFragment {
     private void initView() {
         this.createView();
         mGridView.setAdapter(gridAdapter);
-
-        // 启用触控焦点（手机重要）
         mGridView.setFocusable(true);
         mGridView.setFocusableInTouchMode(true);
         mGridView.setClickable(true);
@@ -287,12 +274,9 @@ public class GridFragment extends BaseLazyFragment {
             }
         }
 
-        gridAdapter.setOnLoadMoreListener(new BaseQuickAdapter.RequestLoadMoreListener() {
-            @Override
-            public void onLoadMoreRequested() {
-                gridAdapter.setEnableLoadMore(true);
-                sourceViewModel.getList(sortData, page);
-            }
+        gridAdapter.setOnLoadMoreListener(() -> {
+            gridAdapter.setEnableLoadMore(true);
+            sourceViewModel.getList(sortData, page);
         }, mGridView);
 
         mGridView.setOnItemListener(new TvRecyclerView.OnItemListener() {
@@ -308,26 +292,15 @@ public class GridFragment extends BaseLazyFragment {
 
             @Override
             public void onItemClick(TvRecyclerView parent, View itemView, int position) {
-                // 空实现，由 Adapter 处理
             }
         });
 
-        mGridView.setOnInBorderKeyEventListener(new TvRecyclerView.OnInBorderKeyEventListener() {
-            @Override
-            public boolean onInBorderKeyEvent(int direction, View focused) {
-                if (direction == View.FOCUS_UP) {
-                }
-                return false;
-            }
-        });
+        mGridView.setOnInBorderKeyEventListener((direction, focused) -> false);
 
-        // 重新绑定 Adapter 的点击事件（确保手机触控有效）
         rebindClickListeners();
-
         gridAdapter.setLoadMoreView(new LoadMoreView());
         setLoadSir(mGridView);
 
-        // 空数据提示（支持触控点击）
         TextView emptyTv = new TextView(mContext);
         emptyTv.setText("暂无直播频道\n请按菜单键或点击这里进入设置添加订阅源");
         emptyTv.setTextColor(0xFFFFFFFF);
@@ -336,49 +309,40 @@ public class GridFragment extends BaseLazyFragment {
         emptyTv.setPadding(0, 300, 0, 0);
         emptyTv.setClickable(true);
         emptyTv.setFocusable(true);
-        emptyTv.setOnClickListener(v -> {
-            Toast.makeText(mContext, "请按菜单键进入设置添加源", Toast.LENGTH_SHORT).show();
-        });
+        emptyTv.setOnClickListener(v -> Toast.makeText(mContext, "请按菜单键进入设置添加源", Toast.LENGTH_SHORT).show());
         gridAdapter.setEmptyView(emptyTv);
     }
 
     private void initViewModel() {
-        if (sourceViewModel != null) {
-            return;
-        }
+        if (sourceViewModel != null) return;
         sourceViewModel = new ViewModelProvider(this).get(SourceViewModel.class);
-        sourceViewModel.listResult.observe(this, new Observer<AbsXml>() {
-            @Override
-            public void onChanged(AbsXml absXml) {
-                if (absXml != null && absXml.movie != null && absXml.movie.videoList != null && absXml.movie.videoList.size() > 0) {
-                    if (page == 1) {
-                        showSuccess();
-                        isLoad = true;
-                        gridAdapter.setNewData(absXml.movie.videoList);
-                    } else {
-                        gridAdapter.addData(absXml.movie.videoList);
-                    }
-                    page++;
-                    maxPage = absXml.movie.pagecount;
-                    if (page > maxPage && maxPage!=0) {
-                        gridAdapter.loadMoreEnd();
-                        gridAdapter.setEnableLoadMore(false);
-                    } else {
-                        gridAdapter.loadMoreComplete();
-                        gridAdapter.setEnableLoadMore(true);
-                    }
+        sourceViewModel.listResult.observe(this, absXml -> {
+            if (absXml != null && absXml.movie != null && absXml.movie.videoList != null && !absXml.movie.videoList.isEmpty()) {
+                if (page == 1) {
+                    showSuccess();
+                    isLoad = true;
+                    gridAdapter.setNewData(absXml.movie.videoList);
                 } else {
-                    if (page == 1) {
-                        showEmpty();
-                    }
-                    if (page > maxPage && maxPage!=0) {
-                        Toast.makeText(getContext(), "没有更多了", Toast.LENGTH_SHORT).show();
-                        gridAdapter.loadMoreEnd();
-                    } else {
-                        gridAdapter.loadMoreComplete();
-                    }
-                    gridAdapter.setEnableLoadMore(false);
+                    gridAdapter.addData(absXml.movie.videoList);
                 }
+                page++;
+                maxPage = absXml.movie.pagecount;
+                if (page > maxPage && maxPage != 0) {
+                    gridAdapter.loadMoreEnd();
+                    gridAdapter.setEnableLoadMore(false);
+                } else {
+                    gridAdapter.loadMoreComplete();
+                    gridAdapter.setEnableLoadMore(true);
+                }
+            } else {
+                if (page == 1) showEmpty();
+                if (page > maxPage && maxPage != 0) {
+                    Toast.makeText(getContext(), "没有更多了", Toast.LENGTH_SHORT).show();
+                    gridAdapter.loadMoreEnd();
+                } else {
+                    gridAdapter.loadMoreComplete();
+                }
+                gridAdapter.setEnableLoadMore(false);
             }
         });
     }
@@ -389,9 +353,38 @@ public class GridFragment extends BaseLazyFragment {
 
     private void initData() {
         if (ApiConfig.get().getHomeSourceBean() == null || ApiConfig.get().getHomeSourceBean().getApi() == null) {
-            showEmpty();
+            // 内置源逻辑
+            showLoading();
+            isLoad = false;
+            scrollTop();
+            toggleFilterStatus();
+
+            AbsXml absXml = new AbsXml();
+            absXml.movie = new Movie();
+            absXml.movie.videoList = new ArrayList<>();
+
+            Movie.Video video1 = new Movie.Video();
+            video1.id = "builtin_1";
+            video1.name = "内置频道1";
+            video1.sourceKey = "builtin_source";
+            absXml.movie.videoList.add(video1);
+
+            Movie.Video video2 = new Movie.Video();
+            video2.id = "builtin_2";
+            video2.name = "内置频道2";
+            video2.sourceKey = "builtin_source";
+            absXml.movie.videoList.add(video2);
+
+            showSuccess();
+            isLoad = true;
+            page = 1;
+            maxPage = 1;
+            gridAdapter.setNewData(absXml.movie.videoList);
+
             return;
         }
+
+        // 网络源逻辑
         showLoading();
         isLoad = false;
         scrollTop();
@@ -420,8 +413,7 @@ public class GridFragment extends BaseLazyFragment {
             gridFilterDialog = new GridFilterDialog(mContext);
             setFilterDialogData();
         }
-        if (gridFilterDialog != null)
-            gridFilterDialog.show();
+        if (gridFilterDialog != null) gridFilterDialog.show();
     }
 
     public void setFilterDialogData() {
