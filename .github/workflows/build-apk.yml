@@ -26,10 +26,30 @@ jobs:
         run: ./gradlew clean
 
       # 只构建 debug 版：arm64 + generic + normal + debug
+      # 输出全部日志到文件，失败也不中断
       - name: Assemble single debug variant
-        run: ./gradlew assembleArm64GenericNormalDebug --stacktrace --info --build-cache --parallel
+        run: ./gradlew assembleArm64GenericNormalDebug --stacktrace --info --build-cache --parallel > compile_log.txt 2>&1 || true
 
-      # 打印所有生成的 APK 文件路径（用于确认位置）
+      # 构建失败时打印关键错误信息（快速定位编译问题）
+      - name: Show compile error summary (only on failure)
+        if: failure()
+        run: |
+          echo "=== 构建失败 - 关键错误提取 ==="
+          echo ""
+          echo "1. 搜索 'error:' 的前 30 行（通常是 javac 具体错误）："
+          grep -i -B 5 -A 25 "error:" compile_log.txt | head -n 50 || echo "未找到 'error:'"
+          echo ""
+          echo "2. 搜索 'failed for task' 的上下文（失败的任务）："
+          grep -B 5 -A 20 "failed for task" compile_log.txt || echo "未找到失败任务"
+          echo ""
+          echo "3. 最后 150 行日志（错误往往在末尾）："
+          tail -n 150 compile_log.txt
+          echo ""
+          echo "4. 如果有 Java 文件路径错误，搜索 'cannot find symbol' 或 'cannot find class'"
+          grep -i "cannot find symbol\|cannot find class\|HomeActivity.java" compile_log.txt || echo "未找到符号错误"
+          echo "=== 结束 - 请把上面输出贴给 Grok ==="
+
+      # 无论成功失败都打印 APK 生成路径（方便确认文件位置）
       - name: Print all generated APK locations
         if: always()
         run: |
@@ -42,7 +62,7 @@ jobs:
           ls -laR app/build/outputs/apk 2>/dev/null || echo "目录不存在或为空"
           echo "======================================"
 
-      # 使用递归查找上传 debug APK（最稳妥，不会因为目录结构变化而失败）
+      # 递归上传所有找到的 debug APK（最稳，不会因为路径变化失败）
       - name: Upload debug APK (recursive search)
         uses: actions/upload-artifact@v4
         with:
