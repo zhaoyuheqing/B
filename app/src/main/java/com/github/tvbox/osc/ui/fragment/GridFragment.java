@@ -165,11 +165,13 @@ public class GridFragment extends BaseLazyFragment {
         this.mGridView.setVisibility(View.VISIBLE);
         if (mGridView != null) {
             mGridView.requestFocus();
+            // 恢复焦点位置（原版缺失，增加触控稳定性）
             if (info.focusedView != null) {
                 info.focusedView.requestFocus();
             }
         }
 
+        // 修复触控：还原后重新绑定 Adapter 和所有事件
         if (gridAdapter != null) {
             mGridView.setAdapter(gridAdapter);
             rebindClickListeners();
@@ -245,6 +247,7 @@ public class GridFragment extends BaseLazyFragment {
             mGridView = v3;
             mGridView.setVisibility(View.VISIBLE);
 
+            // 修复触控：每次创建新 TvRecyclerView 后重新绑定 Adapter 和事件
             if (gridAdapter != null) {
                 mGridView.setAdapter(gridAdapter);
                 rebindClickListeners();
@@ -252,6 +255,7 @@ public class GridFragment extends BaseLazyFragment {
         }
         mGridView.setHasFixedSize(true);
 
+        // 禁用风格初始化（直播壳不需要，避免 NPE）
         style = null;
 
         gridAdapter = new GridAdapter(isFolederMode(), style);
@@ -264,6 +268,7 @@ public class GridFragment extends BaseLazyFragment {
         this.createView();
         mGridView.setAdapter(gridAdapter);
 
+        // 启用触控焦点（手机重要）
         mGridView.setFocusable(true);
         mGridView.setFocusableInTouchMode(true);
         mGridView.setClickable(true);
@@ -281,9 +286,6 @@ public class GridFragment extends BaseLazyFragment {
                 mGridView.setLayoutManager(new V7GridLayoutManager(mContext, spanCount));
             }
         }
-
-        // 默认禁用加载更多，无源时防止 null 请求
-        gridAdapter.setEnableLoadMore(false);
 
         gridAdapter.setOnLoadMoreListener(new BaseQuickAdapter.RequestLoadMoreListener() {
             @Override
@@ -306,6 +308,7 @@ public class GridFragment extends BaseLazyFragment {
 
             @Override
             public void onItemClick(TvRecyclerView parent, View itemView, int position) {
+                // 空实现，由 Adapter 处理
             }
         });
 
@@ -318,11 +321,13 @@ public class GridFragment extends BaseLazyFragment {
             }
         });
 
+        // 重新绑定 Adapter 的点击事件（确保手机触控有效）
         rebindClickListeners();
 
         gridAdapter.setLoadMoreView(new LoadMoreView());
         setLoadSir(mGridView);
 
+        // 空数据提示（支持触控点击）
         TextView emptyTv = new TextView(mContext);
         emptyTv.setText("暂无直播频道\n请按菜单键或点击这里进入设置添加订阅源");
         emptyTv.setTextColor(0xFFFFFFFF);
@@ -385,25 +390,8 @@ public class GridFragment extends BaseLazyFragment {
     private void initData() {
         if (ApiConfig.get().getHomeSourceBean() == null || ApiConfig.get().getHomeSourceBean().getApi() == null) {
             showEmpty();
-
-            // 临时测试频道（验证触控）
-            ArrayList<Movie.Video> fakeList = new ArrayList<>();
-            Movie.Video fake = new Movie.Video();
-            fake.name = "测试直播频道（点击我跳转详情）";
-            fake.id = "test_id";
-            fake.sourceKey = "test_source";
-            fake.pic = "";
-            fakeList.add(fake);
-
-            gridAdapter.setNewData(fakeList);
-            showSuccess();
-            isLoad = true;
-
-            // 关键：无源禁用加载更多，避免 null 请求闪退
-            gridAdapter.setEnableLoadMore(false);
             return;
         }
-
         showLoading();
         isLoad = false;
         scrollTop();
