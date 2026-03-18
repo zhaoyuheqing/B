@@ -6,15 +6,15 @@ import android.view.KeyEvent;
 
 import com.github.tvbox.osc.R;
 import com.github.tvbox.osc.ui.fragment.GridFragment;
+import com.github.tvbox.osc.base.BaseActivity;  // ← 这一行必须加！
 
-public class HomeActivity extends BaseActivity {  // 必须是 BaseActivity（原项目基类）
+public class HomeActivity extends BaseActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_live);
 
-        // 直接加载直播频道列表
         getSupportFragmentManager().beginTransaction()
             .replace(R.id.container, GridFragment.newInstance(getLiveSortData()))
             .commitAllowingStateLoss();
