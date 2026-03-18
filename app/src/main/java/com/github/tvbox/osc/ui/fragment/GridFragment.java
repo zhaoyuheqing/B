@@ -102,9 +102,11 @@ public class GridFragment extends BaseLazyFragment {
 
     @Override
     protected void init() {
-        initView();
-        initViewModel();
-        initData();
+        if (mGridView == null) {  // 防止重复初始化导致多次调用 initData
+            initView();
+            initViewModel();
+            initData();
+        }
     }
     
     @Override
@@ -334,6 +336,17 @@ public class GridFragment extends BaseLazyFragment {
             Toast.makeText(mContext, "请按菜单键进入设置添加源", Toast.LENGTH_SHORT).show();
         });
         gridAdapter.setEmptyView(emptyTv);
+
+        // 强制清空数据，确保显示 emptyView
+        gridAdapter.setNewData(null);
+        gridAdapter.notifyDataSetChanged();
+
+        // 延迟让 emptyTv 获取焦点
+        new android.os.Handler().postDelayed(() -> {
+            if (gridAdapter.getItemCount() == 0 && emptyTv.getParent() != null) {
+                emptyTv.requestFocus();
+            }
+        }, 800);
     }
 
     private void initViewModel() {
@@ -382,29 +395,23 @@ public class GridFragment extends BaseLazyFragment {
     }
 
     private void initData() {
-        // 内置 TXT 直播源：https://frosty-block-011f.pohoy71288.workers.dev/
-        if (ApiConfig.get().getHomeSourceBean() == null || ApiConfig.get().getHomeSourceBean().getApi() == null) {
-            // 创建内置源对象
-            SourceBean builtInSource = new SourceBean();
-            builtInSource.setKey("built_in_frosty_txt");
-            builtInSource.setName("内置 TXT 测试源 (frosty)");
-            builtInSource.setApi("https://frosty-block-011f.pohoy71288.workers.dev/");
-
-            // TXT 源通常用 type = 0 或自定义（TVBox 解析 TXT 时不依赖 type 严格枚举）
-            // 这里用反射或直接跳过 setType（因为你的项目可能没有 type 方法）
-            // 如果有 setType(int)，可以试试 builtInSource.setType(0); 但报错说明没有
-
-            // 强制设置 homeSource（如果项目有这个方法）
-            // 如果 ApiConfig 没有 setHomeSourceBean，改用下面方式模拟加载
-            showLoading();
+        SourceBean homeSource = ApiConfig.get().getHomeSourceBean();
+        if (homeSource == null || homeSource.getApi() == null || homeSource.getApi().trim().isEmpty()) {
+            showEmpty();
+            gridAdapter.setNewData(null);
+            gridAdapter.notifyDataSetChanged();
+            gridAdapter.setEnableLoadMore(false);
             isLoad = false;
-            scrollTop();
-            toggleFilterStatus();
+            return;
+        }
 
-            // 直接用内置源加载列表（绕过 ApiConfig 限制）
-            sourceViewModel.getList(sortData, page);  // 先试试原逻辑
-            // 如果上面不生效，可再加自定义加载逻辑（见注释）
-
+        // 额外判空：确保 sortData 存在且 id 有效
+        if (sortData == null || sortData.id == null || sortData.id.trim().isEmpty()) {
+            showEmpty();
+            gridAdapter.setNewData(null);
+            gridAdapter.notifyDataSetChanged();
+            gridAdapter.setEnableLoadMore(false);
+            isLoad = false;
             return;
         }
 
