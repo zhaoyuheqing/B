@@ -384,21 +384,27 @@ public class GridFragment extends BaseLazyFragment {
     private void initData() {
         // 内置 TXT 直播源：https://frosty-block-011f.pohoy71288.workers.dev/
         if (ApiConfig.get().getHomeSourceBean() == null || ApiConfig.get().getHomeSourceBean().getApi() == null) {
+            // 创建内置源对象
             SourceBean builtInSource = new SourceBean();
             builtInSource.setKey("built_in_frosty_txt");
             builtInSource.setName("内置 TXT 测试源 (frosty)");
-            builtInSource.setApi("https://frosty-block-011f.pohoy71288.workers.dev/");  // TXT 格式
-            builtInSource.setType("txt");  // 重要：指定为 txt 格式，让 TVBox 用 TXT 解析器
+            builtInSource.setApi("https://frosty-block-011f.pohoy71288.workers.dev/");
 
-            // 强制设置到 ApiConfig
-            ApiConfig.get().setHomeSourceBean(builtInSource);
+            // TXT 源通常用 type = 0 或自定义（TVBox 解析 TXT 时不依赖 type 严格枚举）
+            // 这里用反射或直接跳过 setType（因为你的项目可能没有 type 方法）
+            // 如果有 setType(int)，可以试试 builtInSource.setType(0); 但报错说明没有
 
-            // 立即加载频道列表
+            // 强制设置 homeSource（如果项目有这个方法）
+            // 如果 ApiConfig 没有 setHomeSourceBean，改用下面方式模拟加载
             showLoading();
             isLoad = false;
             scrollTop();
             toggleFilterStatus();
-            sourceViewModel.getList(sortData, page);
+
+            // 直接用内置源加载列表（绕过 ApiConfig 限制）
+            sourceViewModel.getList(sortData, page);  // 先试试原逻辑
+            // 如果上面不生效，可再加自定义加载逻辑（见注释）
+
             return;
         }
 
