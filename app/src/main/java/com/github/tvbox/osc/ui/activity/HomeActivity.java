@@ -4,12 +4,10 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.view.KeyEvent;
 
-import androidx.appcompat.app.AppCompatActivity;
-
 import com.github.tvbox.osc.R;
 import com.github.tvbox.osc.ui.fragment.GridFragment;
 
-public class HomeActivity extends AppCompatActivity {
+public class HomeActivity extends BaseActivity {  // 必须是 BaseActivity（原项目基类）
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
