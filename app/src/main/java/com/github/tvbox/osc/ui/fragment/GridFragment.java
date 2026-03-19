@@ -3,10 +3,9 @@ package com.github.tvbox.osc.ui.fragment;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
+import android.widget.Button;
+import android.widget.LinearLayout;
 import android.widget.TextView;
-import android.widget.Toast;
-
-import androidx.annotation.NonNull;
 
 import com.chad.library.adapter.base.BaseQuickAdapter;
 import com.chad.library.adapter.base.BaseViewHolder;
@@ -14,34 +13,25 @@ import com.chad.library.adapter.base.BaseViewHolder;
 import com.github.tvbox.osc.R;
 import com.github.tvbox.osc.api.ApiConfig;
 import com.github.tvbox.osc.base.BaseLazyFragment;
-import com.github.tvbox.osc.bean.MovieSort;
-import com.github.tvbox.osc.event.RefreshEvent;
 import com.github.tvbox.osc.ui.activity.LivePlayActivity;
 import com.github.tvbox.osc.ui.activity.SettingActivity;
 import com.github.tvbox.osc.ui.adapter.GridAdapter;
-import com.github.tvbox.osc.ui.tv.widget.LoadMoreView;
-import com.github.tvbox.osc.util.FastClickCheckUtil;
 import com.owen.tvrecyclerview.widget.TvRecyclerView;
 import com.owen.tvrecyclerview.widget.V7GridLayoutManager;
 
-import org.greenrobot.eventbus.EventBus;
-import org.greenrobot.eventbus.Subscribe;
-import org.greenrobot.eventbus.ThreadMode;
-
 /**
- * 纯直播壳 - 无内置源 + 点击/长按添加源 + 添加后自动进入播放
+ * 纯直播壳 - 添加源后手动点击“进入直播”按钮跳转
  */
 public class GridFragment extends BaseLazyFragment {
 
     private TvRecyclerView mGridView;
     private GridAdapter gridAdapter;
+    private LinearLayout emptyLayout;
+    private Button btnAddSource;
+    private Button btnEnterLive;
 
     public static GridFragment newInstance() {
         return new GridFragment();
-    }
-
-    public static GridFragment newInstance(MovieSort.SortData sortData) {
-        return newInstance();
     }
 
     @Override
@@ -51,16 +41,8 @@ public class GridFragment extends BaseLazyFragment {
 
     @Override
     protected void init() {
-        EventBus.getDefault().register(this);
-
         initView();
-
-        // 启动时检查是否有直播源
-        if (ApiConfig.get().getChannelGroupList() != null && !ApiConfig.get().getChannelGroupList().isEmpty()) {
-            jumpActivity(LivePlayActivity.class);
-        } else {
-            showEmptyState();
-        }
+        updateUIState();
     }
 
     private void initView() {
@@ -70,24 +52,7 @@ public class GridFragment extends BaseLazyFragment {
 
         gridAdapter = new GridAdapter(false, null);
         mGridView.setAdapter(gridAdapter);
-
         gridAdapter.setEnableLoadMore(false);
-
-        // 焦点动画
-        mGridView.setOnItemListener(new TvRecyclerView.OnItemListener() {
-            @Override
-            public void onItemPreSelected(TvRecyclerView parent, View itemView, int position) {
-                itemView.animate().scaleX(1.0f).scaleY(1.0f).setDuration(200).start();
-            }
-
-            @Override
-            public void onItemSelected(TvRecyclerView parent, View itemView, int position) {
-                itemView.animate().scaleX(1.1f).scaleY(1.1f).setDuration(200).start();
-            }
-
-            @Override
-            public void onItemClick(TvRecyclerView parent, View itemView, int position) {}
-        });
 
         // 长按任意位置 → 添加源
         mGridView.setOnLongClickListener(v -> {
@@ -95,34 +60,71 @@ public class GridFragment extends BaseLazyFragment {
             return true;
         });
 
-        // 空状态提示（可点击 + 长按都跳转）
-        TextView emptyTv = new TextView(mContext);
-        emptyTv.setText("暂无直播频道\n\n点击这里或长按屏幕任意位置\n添加直播源订阅");
-        emptyTv.setTextColor(0xFFFFFFFF);
-        emptyTv.setTextSize(20);
-        emptyTv.setGravity(Gravity.CENTER);
-        emptyTv.setPadding(0, 300, 0, 0);
-        emptyTv.setClickable(true);
-        emptyTv.setFocusable(true);
-        emptyTv.setFocusableInTouchMode(true);
-        emptyTv.setOnClickListener(v -> jumpActivity(SettingActivity.class));
-        gridAdapter.setEmptyView(emptyTv);
+        // 自定义空状态布局（包含两个按钮）
+        emptyLayout = new LinearLayout(mContext);
+        emptyLayout.setOrientation(LinearLayout.VERTICAL);
+        emptyLayout.setGravity(Gravity.CENTER);
+        emptyLayout.setPadding(0, 200, 0, 0);
+
+        TextView tvEmpty = new TextView(mContext);
+        tvEmpty.setText("暂无直播频道");
+        tvEmpty.setTextColor(0xFFFFFFFF);
+        tvEmpty.setTextSize(24);
+        tvEmpty.setGravity(Gravity.CENTER);
+        emptyLayout.addView(tvEmpty);
+
+        btnAddSource = new Button(mContext);
+        btnAddSource.setText("添加直播源");
+        btnAddSource.setTextColor(0xFFFFFFFF);
+        btnAddSource.setBackgroundResource(R.drawable.button_background);  // 你需要一个按钮背景 drawable
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        params.topMargin = 40;
+        btnAddSource.setLayoutParams(params);
+        btnAddSource.setOnClickListener(v -> jumpActivity(SettingActivity.class));
+        emptyLayout.addView(btnAddSource);
+
+        btnEnterLive = new Button(mContext);
+        btnEnterLive.setText("进入直播");
+        btnEnterLive.setTextColor(0xFFFFFFFF);
+        btnEnterLive.setBackgroundResource(R.drawable.button_background);
+        params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        params.topMargin = 20;
+        btnEnterLive.setLayoutParams(params);
+        btnEnterLive.setOnClickListener(v -> {
+            if (ApiConfig.get().getChannelGroupList() != null && !ApiConfig.get().getChannelGroupList().isEmpty()) {
+                jumpActivity(LivePlayActivity.class);
+            } else {
+                Toast.makeText(mContext, "暂无可用直播源，请先添加", Toast.LENGTH_SHORT).show();
+            }
+        });
+        emptyLayout.addView(btnEnterLive);
+
+        gridAdapter.setEmptyView(emptyLayout);
     }
 
-    private void showEmptyState() {
-        gridAdapter.setNewData(null);
-        showEmpty();
-    }
-
-    // 监听添加源后的刷新事件
-    @Subscribe(threadMode = ThreadMode.MAIN)
-    public void onRefresh(RefreshEvent event) {
-        jumpActivity(LivePlayActivity.class);
+    private void updateUIState() {
+        if (ApiConfig.get().getChannelGroupList() != null && !ApiConfig.get().getChannelGroupList().isEmpty()) {
+            // 有源 → 隐藏添加按钮，显示进入按钮
+            btnAddSource.setVisibility(View.GONE);
+            btnEnterLive.setVisibility(View.VISIBLE);
+            btnEnterLive.requestFocus();  // 焦点给进入按钮
+        } else {
+            // 无源 → 显示添加按钮，隐藏进入按钮
+            btnAddSource.setVisibility(View.VISIBLE);
+            btnEnterLive.setVisibility(View.GONE);
+        }
     }
 
     @Override
-    public void onDestroy() {
-        super.onDestroy();
-        EventBus.getDefault().unregister(this);
+    public void onResume() {
+        super.onResume();
+        // 从设置页返回后更新状态
+        updateUIState();
     }
 }
