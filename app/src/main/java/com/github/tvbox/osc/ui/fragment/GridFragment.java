@@ -31,6 +31,11 @@ public class GridFragment extends BaseLazyFragment {
         return new GridFragment();
     }
 
+    // 兼容 HomeActivity 原版调用（忽略 SortData 参数）
+    public static GridFragment newInstance(Object sortData) {
+        return newInstance();
+    }
+
     @Override
     protected int getLayoutResID() {
         return R.layout.fragment_grid;
@@ -51,11 +56,13 @@ public class GridFragment extends BaseLazyFragment {
         mGridView.setAdapter(gridAdapter);
         gridAdapter.setEnableLoadMore(false);
 
+        // 长按任意位置 → 进入设置页添加源
         mGridView.setOnLongClickListener(v -> {
             jumpActivity(SettingActivity.class);
             return true;
         });
 
+        // 自定义空状态布局
         emptyLayout = new LinearLayout(requireContext());
         emptyLayout.setOrientation(LinearLayout.VERTICAL);
         emptyLayout.setGravity(Gravity.CENTER);
@@ -70,10 +77,10 @@ public class GridFragment extends BaseLazyFragment {
         btnAddSource = new Button(requireContext());
         btnAddSource.setText("添加直播源");
         btnAddSource.setTextColor(0xFFFFFFFF);
-        btnAddSource.setBackgroundColor(0xFF3366CC);
+        btnAddSource.setBackgroundColor(0xFF3366CC); // 蓝色背景，临时替代 drawable
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
         );
         params.topMargin = 40;
         btnAddSource.setLayoutParams(params);
@@ -83,10 +90,10 @@ public class GridFragment extends BaseLazyFragment {
         btnEnterLive = new Button(requireContext());
         btnEnterLive.setText("进入直播");
         btnEnterLive.setTextColor(0xFFFFFFFF);
-        btnEnterLive.setBackgroundColor(0xFF4CAF50);
+        btnEnterLive.setBackgroundColor(0xFF4CAF50); // 绿色背景
         params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
         );
         params.topMargin = 20;
         btnEnterLive.setLayoutParams(params);
@@ -112,20 +119,23 @@ public class GridFragment extends BaseLazyFragment {
     public void onResume() {
         super.onResume();
 
-        // 从设置返回后，强制加载一次直播源（利用 Hawk 保存的 URL）
+        // 从设置返回后，强制读取 Hawk 保存的直播源 URL 并解析
         new Thread(() -> {
             try {
                 String liveUrl = Hawk.get(HawkConfig.LIVE_URL, "");
                 if (!liveUrl.isEmpty()) {
-                    // 关键：重新解析直播源
+                    // 关键：重新加载并解析直播源（原版 ApiConfig 支持的方法）
                     ApiConfig.loadLives(liveUrl);
                 }
             } catch (Exception ignored) {
+                // 忽略异常，避免崩溃
             }
 
             requireActivity().runOnUiThread(() -> {
                 updateUIState();
-                Toast.makeText(requireContext(), "频道数量: " + (ApiConfig.get().getChannelGroupList() == null ? 0 : ApiConfig.get().getChannelGroupList().size()), Toast.LENGTH_LONG).show();
+                // 调试提示：确认是否解析成功
+                int count = ApiConfig.get().getChannelGroupList() == null ? 0 : ApiConfig.get().getChannelGroupList().size();
+                Toast.makeText(requireContext(), "频道组数量: " + count, Toast.LENGTH_LONG).show();
             });
         }).start();
     }
