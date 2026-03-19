@@ -13,25 +13,24 @@ import com.chad.library.adapter.base.BaseViewHolder;
 import com.github.tvbox.osc.R;
 import com.github.tvbox.osc.base.BaseLazyFragment;
 import com.github.tvbox.osc.bean.MovieSort;
-import com.github.tvbox.osc.event.RefreshEvent;
-import com.github.tvbox.osc.ui.activity.LivePlayActivity;
-import com.github.tvbox.osc.ui.activity.SettingActivity;
 import com.github.tvbox.osc.ui.adapter.GridAdapter;
 import com.github.tvbox.osc.ui.tv.widget.LoadMoreView;
 import com.github.tvbox.osc.util.FastClickCheckUtil;
 import com.owen.tvrecyclerview.widget.TvRecyclerView;
 import com.owen.tvrecyclerview.widget.V7GridLayoutManager;
 
+// 必须添加的额外 import（实现功能需要，原版没有）
+import com.github.tvbox.osc.api.ApiConfig;
+import com.github.tvbox.osc.event.RefreshEvent;
+import com.github.tvbox.osc.ui.activity.LivePlayActivity;
+import com.github.tvbox.osc.ui.activity.SettingActivity;
+
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
 import org.greenrobot.eventbus.ThreadMode;
 
 /**
- * 纯直播壳 - 无内置源版
- * 启动后：
- *   - 有源 → 直接跳 LivePlayActivity
- *   - 无源 → 显示空提示 + 长按任意位置添加源
- * 添加源成功后自动进入 LivePlayActivity
+ * 纯直播壳 - 无内置源 + 添加源后自动进入 LivePlayActivity
  */
 public class GridFragment extends BaseLazyFragment {
 
@@ -57,7 +56,7 @@ public class GridFragment extends BaseLazyFragment {
 
         initView();
 
-        // 启动时检查是否有直播源
+        // 检查是否有直播源（如果有，直接进入播放）
         if (ApiConfig.get().getChannelGroupList() != null && !ApiConfig.get().getChannelGroupList().isEmpty()) {
             jumpActivity(LivePlayActivity.class);
         } else {
@@ -111,7 +110,6 @@ public class GridFragment extends BaseLazyFragment {
         showEmpty();
     }
 
-    // 监听刷新事件（添加源成功后触发）
     @Subscribe(threadMode = ThreadMode.MAIN)
     public void onRefresh(RefreshEvent event) {
         jumpActivity(LivePlayActivity.class);
