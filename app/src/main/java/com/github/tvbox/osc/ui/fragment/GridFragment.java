@@ -12,7 +12,6 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import com.blankj.utilcode.util.GsonUtils;
-import androidx.recyclerview.widget.LinearLayoutManager;
 import com.chad.library.adapter.base.BaseQuickAdapter;
 import com.github.tvbox.osc.R;
 import com.github.tvbox.osc.base.BaseLazyFragment;
@@ -43,7 +42,7 @@ import org.json.JSONObject;
 import java.util.Stack;
 
 /**
- * 纯直播网格界面，无源依赖，空网格 + 可交互提示
+ * 纯直播网格界面，无任何源依赖，直接显示空网格，可操作
  */
 public class GridFragment extends BaseLazyFragment {
     private MovieSort.SortData sortData = null;
@@ -55,8 +54,8 @@ public class GridFragment extends BaseLazyFragment {
     private boolean isTop = true;
     private View focusedView = null;
 
-    private static class GridInfo{
-        public String sortID="";
+    private static class GridInfo {
+        public String sortID = "";
         public TvRecyclerView mGridView;
         public GridAdapter gridAdapter;
         public int page = 1;
@@ -65,10 +64,12 @@ public class GridFragment extends BaseLazyFragment {
         public View focusedView = null;
     }
 
-    Stack<GridInfo> mGrids = new Stack<GridInfo>(); //ui栈
+    Stack<GridInfo> mGrids = new Stack<>();
 
     public static GridFragment newInstance(MovieSort.SortData sortData) {
-        return new GridFragment().setArguments(sortData);
+        GridFragment fragment = new GridFragment();
+        fragment.sortData = sortData;
+        return fragment;
     }
 
     public GridFragment setArguments(MovieSort.SortData sortData) {
@@ -80,7 +81,7 @@ public class GridFragment extends BaseLazyFragment {
     protected int getLayoutResID() {
         return R.layout.fragment_grid;
     }
-    
+
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -93,25 +94,25 @@ public class GridFragment extends BaseLazyFragment {
     protected void init() {
         if (mGridView == null) {
             initView();
-            // 不再调用 initViewModel 和 initData，因为不加载任何数据
+            // 不再拉取源、不再加载数据，直接显示空网格
         }
     }
-    
+
     @Override
     public void onSaveInstanceState(@NonNull Bundle outState) {
         super.onSaveInstanceState(outState);
-        outState.putString("sortDataJson", GsonUtils.toJson(sortData));        
+        outState.putString("sortDataJson", GsonUtils.toJson(sortData));
     }
 
-    private void changeView(String id,Boolean isFolder){
-        if(isFolder){
-            this.sortData.flag =style==null?"1":"2";
-        }else {
-            this.sortData.flag ="2";
+    private void changeView(String id, Boolean isFolder) {
+        if (isFolder) {
+            this.sortData.flag = style == null ? "1" : "2";
+        } else {
+            this.sortData.flag = "2";
         }
         initView();
         this.sortData.id = id;
-        // 不再调用 initViewModel 和 initData
+        // 不再调用任何加载逻辑
     }
 
     public boolean isFolederMode() {
@@ -122,8 +123,8 @@ public class GridFragment extends BaseLazyFragment {
         return (sortData == null || sortData.flag == null || sortData.flag.length() == 0) ? '0' : sortData.flag.charAt(0);
     }
 
-    public boolean enableFastSearch() {  
-        return sortData.flag == null || sortData.flag.length() < 2 || (sortData.flag.charAt(1) == '1'); 
+    public boolean enableFastSearch() {
+        return sortData.flag == null || sortData.flag.length() < 2 || (sortData.flag.charAt(1) == '1');
     }
 
     private void saveCurrentView() {
@@ -165,26 +166,6 @@ public class GridFragment extends BaseLazyFragment {
         }
 
         return true;
-    }
-
-    private void rebindClickListeners() {
-        gridAdapter.setOnItemClickListener(new BaseQuickAdapter.OnItemClickListener() {
-            @Override
-            public void onItemClick(BaseQuickAdapter adapter, View view, int position) {
-                FastClickCheckUtil.check(view);
-                // 空网格时无数据，保留原有逻辑但不跳转
-                // 如果未来加数据，可恢复跳转
-            }
-        });
-
-        gridAdapter.setOnItemLongClickListener(new BaseQuickAdapter.OnItemLongClickListener() {
-            @Override
-            public boolean onItemLongClick(BaseQuickAdapter adapter, View view, int position) {
-                FastClickCheckUtil.check(view);
-                // 同上，空时不处理
-                return true;
-            }
-        });
     }
 
     private ImgUtil.Style style;
@@ -241,9 +222,7 @@ public class GridFragment extends BaseLazyFragment {
             }
         }
 
-        // 禁用加载更多（无数据源，不需要）
-        gridAdapter.setEnableLoadMore(false);
-
+        // 保留焦点动画
         mGridView.setOnItemListener(new TvRecyclerView.OnItemListener() {
             @Override
             public void onItemPreSelected(TvRecyclerView parent, View itemView, int position) {
@@ -269,56 +248,42 @@ public class GridFragment extends BaseLazyFragment {
             }
         });
 
+        // 保留点击/长按事件（空时不跳转）
         rebindClickListeners();
 
+        // 保留 LoadMoreView（未来加数据可用）
         gridAdapter.setLoadMoreView(new LoadMoreView());
+        gridAdapter.setEnableLoadMore(false); // 空网格不加载更多
 
-        // 自定义空状态提示（必须可见、可焦点、可点击）
-        TextView emptyTv = new TextView(mContext);
-        emptyTv.setText("暂无直播频道\n点击这里或按菜单键进入设置添加源");
-        emptyTv.setTextColor(0xFFFFFFFF);
-        emptyTv.setTextSize(20);
-        emptyTv.setGravity(android.view.Gravity.CENTER);
-        emptyTv.setPadding(0, 300, 0, 0);
-        emptyTv.setClickable(true);
-        emptyTv.setFocusable(true);
-        emptyTv.setFocusableInTouchMode(true);
-        emptyTv.setOnClickListener(v -> {
-            Toast.makeText(mContext, "请按菜单键进入设置添加源", Toast.LENGTH_SHORT).show();
-        });
-        gridAdapter.setEmptyView(emptyTv);
-
-        // 强制空数据，确保显示 emptyTv
+        // 不再设置 emptyView（你说不要提示文字），网格直接空着
         gridAdapter.setNewData(null);
         gridAdapter.notifyDataSetChanged();
 
-        // 多次延迟强制焦点到 emptyTv
-        new android.os.Handler().postDelayed(() -> {
-            if (emptyTv.getParent() != null) {
-                emptyTv.requestFocus();
-                emptyTv.setSelected(true);
-            }
-        }, 300);
+        // 强制网格获得焦点
+        mGridView.requestFocus();
+    }
 
-        new android.os.Handler().postDelayed(() -> {
-            if (emptyTv.getParent() != null) {
-                emptyTv.requestFocus();
+    private void rebindClickListeners() {
+        gridAdapter.setOnItemClickListener(new BaseQuickAdapter.OnItemClickListener() {
+            @Override
+            public void onItemClick(BaseQuickAdapter adapter, View view, int position) {
+                FastClickCheckUtil.check(view);
+                // 空网格无数据，保留结构
             }
-        }, 800);
+        });
 
-        new android.os.Handler().postDelayed(() -> {
-            if (emptyTv.getParent() != null) {
-                emptyTv.requestFocus();
+        gridAdapter.setOnItemLongClickListener(new BaseQuickAdapter.OnItemLongClickListener() {
+            @Override
+            public boolean onItemLongClick(BaseQuickAdapter adapter, View view, int position) {
+                FastClickCheckUtil.check(view);
+                // 空网格无数据，保留结构
+                return true;
             }
-        }, 1500);
+        });
     }
 
     public boolean isLoad() {
         return isLoad || !mGrids.empty();
-    }
-
-    private void toggleFilterStatus() {
-        // 无源不处理过滤器
     }
 
     public boolean isTop() {
