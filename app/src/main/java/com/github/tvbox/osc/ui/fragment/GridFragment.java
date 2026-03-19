@@ -5,8 +5,11 @@ import android.view.Gravity;
 import android.view.View;
 import android.widget.TextView;
 
+import androidx.annotation.NonNull;
+
 import com.chad.library.adapter.base.BaseQuickAdapter;
-import com.chad.library.adapter.base.BaseViewHolder;  // 原版路径（旧版 Brvah）
+import com.chad.library.adapter.base.BaseViewHolder;
+
 import com.github.tvbox.osc.R;
 import com.github.tvbox.osc.base.BaseLazyFragment;
 import com.github.tvbox.osc.bean.MovieSort;
@@ -24,10 +27,11 @@ import org.greenrobot.eventbus.Subscribe;
 import org.greenrobot.eventbus.ThreadMode;
 
 /**
- * 纯直播壳 - 无内置源 + 添加后自动进入 LivePlayActivity
- * - 启动后：已有源 → 直接进入播放页
- * - 无源 → 显示空提示 + 长按跳转设置添加源
- * - 添加源成功 → 自动跳转 LivePlayActivity
+ * 纯直播壳 - 无内置源版
+ * 启动后：
+ *   - 有源 → 直接跳 LivePlayActivity
+ *   - 无源 → 显示空提示 + 长按任意位置添加源
+ * 添加源成功后自动进入 LivePlayActivity
  */
 public class GridFragment extends BaseLazyFragment {
 
@@ -39,7 +43,7 @@ public class GridFragment extends BaseLazyFragment {
     }
 
     public static GridFragment newInstance(MovieSort.SortData sortData) {
-        return newInstance();  // 兼容旧版调用
+        return newInstance();
     }
 
     @Override
@@ -53,12 +57,10 @@ public class GridFragment extends BaseLazyFragment {
 
         initView();
 
-        // 启动时检查是否已有直播源
-        if (!ApiConfig.get().getChannelGroupList().isEmpty()) {
-            // 已有源 → 直接进入播放界面
+        // 启动时检查是否有直播源
+        if (ApiConfig.get().getChannelGroupList() != null && !ApiConfig.get().getChannelGroupList().isEmpty()) {
             jumpActivity(LivePlayActivity.class);
         } else {
-            // 无源 → 显示空提示
             showEmptyState();
         }
     }
@@ -66,14 +68,13 @@ public class GridFragment extends BaseLazyFragment {
     private void initView() {
         mGridView = findViewById(R.id.mGridView);
         mGridView.setHasFixedSize(true);
-        mGridView.setLayoutManager(new V7GridLayoutManager(mContext, 1));  // 单列显示提示
+        mGridView.setLayoutManager(new V7GridLayoutManager(mContext, 1));
 
-        gridAdapter = new GridAdapter(false, null);  // 复用原版适配器
+        gridAdapter = new GridAdapter(false, null);
         mGridView.setAdapter(gridAdapter);
 
         gridAdapter.setEnableLoadMore(false);
 
-        // 焦点动画（原版风格）
         mGridView.setOnItemListener(new TvRecyclerView.OnItemListener() {
             @Override
             public void onItemPreSelected(TvRecyclerView parent, View itemView, int position) {
@@ -89,13 +90,13 @@ public class GridFragment extends BaseLazyFragment {
             public void onItemClick(TvRecyclerView parent, View itemView, int position) {}
         });
 
-        // 长按任意位置 → 添加源（无点击跳转）
+        // 长按任意位置 → 添加源
         mGridView.setOnLongClickListener(v -> {
             jumpActivity(SettingActivity.class);
             return true;
         });
 
-        // 空状态提示（纯文字，无按钮）
+        // 空状态纯文字提示（无按钮）
         TextView emptyTv = new TextView(mContext);
         emptyTv.setText("暂无直播频道\n\n长按屏幕任意位置\n添加直播源订阅");
         emptyTv.setTextColor(0xFFFFFFFF);
@@ -110,11 +111,9 @@ public class GridFragment extends BaseLazyFragment {
         showEmpty();
     }
 
-    // 监听源更新事件（添加源后触发）
+    // 监听刷新事件（添加源成功后触发）
     @Subscribe(threadMode = ThreadMode.MAIN)
     public void onRefresh(RefreshEvent event) {
-        // 原版添加源后会触发 TYPE_LIVEPLAY_UPDATE 或类似事件
-        // 收到事件 → 说明源已更新 → 直接进入播放界面
         jumpActivity(LivePlayActivity.class);
     }
 
