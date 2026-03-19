@@ -11,6 +11,7 @@ import android.widget.Toast;
 import com.github.tvbox.osc.R;
 import com.github.tvbox.osc.api.ApiConfig;
 import com.github.tvbox.osc.base.BaseLazyFragment;
+import com.github.tvbox.osc.bean.LiveChannelGroup;
 import com.github.tvbox.osc.ui.activity.LivePlayActivity;
 import com.github.tvbox.osc.ui.activity.SettingActivity;
 import com.github.tvbox.osc.ui.adapter.GridAdapter;
@@ -18,6 +19,8 @@ import com.github.tvbox.osc.util.HawkConfig;
 import com.orhanobut.hawk.Hawk;
 import com.owen.tvrecyclerview.widget.TvRecyclerView;
 import com.owen.tvrecyclerview.widget.V7GridLayoutManager;
+
+import java.util.List;
 
 public class GridFragment extends BaseLazyFragment {
 
@@ -56,13 +59,11 @@ public class GridFragment extends BaseLazyFragment {
         mGridView.setAdapter(gridAdapter);
         gridAdapter.setEnableLoadMore(false);
 
-        // 长按任意位置 → 进入设置页添加源
         mGridView.setOnLongClickListener(v -> {
             jumpActivity(SettingActivity.class);
             return true;
         });
 
-        // 自定义空状态布局
         emptyLayout = new LinearLayout(requireContext());
         emptyLayout.setOrientation(LinearLayout.VERTICAL);
         emptyLayout.setGravity(Gravity.CENTER);
@@ -77,7 +78,7 @@ public class GridFragment extends BaseLazyFragment {
         btnAddSource = new Button(requireContext());
         btnAddSource.setText("添加直播源");
         btnAddSource.setTextColor(0xFFFFFFFF);
-        btnAddSource.setBackgroundColor(0xFF3366CC); // 蓝色背景，临时替代 drawable
+        btnAddSource.setBackgroundColor(0xFF3366CC);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -90,7 +91,7 @@ public class GridFragment extends BaseLazyFragment {
         btnEnterLive = new Button(requireContext());
         btnEnterLive.setText("进入直播");
         btnEnterLive.setTextColor(0xFFFFFFFF);
-        btnEnterLive.setBackgroundColor(0xFF4CAF50); // 绿色背景
+        btnEnterLive.setBackgroundColor(0xFF4CAF50);
         params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -104,7 +105,7 @@ public class GridFragment extends BaseLazyFragment {
     }
 
     private void updateUIState() {
-        var groups = ApiConfig.get().getChannelGroupList();
+        List<LiveChannelGroup> groups = ApiConfig.get().getChannelGroupList();
         if (groups != null && !groups.isEmpty()) {
             btnAddSource.setVisibility(View.GONE);
             btnEnterLive.setVisibility(View.VISIBLE);
@@ -119,23 +120,19 @@ public class GridFragment extends BaseLazyFragment {
     public void onResume() {
         super.onResume();
 
-        // 从设置返回后，强制读取 Hawk 保存的直播源 URL 并解析
+        // 从设置返回后，检查是否保存了直播源 URL，并提示用户
         new Thread(() -> {
-            try {
-                String liveUrl = Hawk.get(HawkConfig.LIVE_URL, "");
-                if (!liveUrl.isEmpty()) {
-                    // 关键：重新加载并解析直播源（原版 ApiConfig 支持的方法）
-                    ApiConfig.loadLives(liveUrl);
-                }
-            } catch (Exception ignored) {
-                // 忽略异常，避免崩溃
+            String liveUrl = Hawk.get(HawkConfig.LIVE_URL, "");
+            final String msg;
+            if (liveUrl.isEmpty()) {
+                msg = "未检测到直播源地址，请在设置中添加";
+            } else {
+                msg = "已检测到直播源地址：" + liveUrl + "\n请进入直播查看频道";
             }
 
             requireActivity().runOnUiThread(() -> {
                 updateUIState();
-                // 调试提示：确认是否解析成功
-                int count = ApiConfig.get().getChannelGroupList() == null ? 0 : ApiConfig.get().getChannelGroupList().size();
-                Toast.makeText(requireContext(), "频道组数量: " + count, Toast.LENGTH_LONG).show();
+                Toast.makeText(requireContext(), msg, Toast.LENGTH_LONG).show();
             });
         }).start();
     }
