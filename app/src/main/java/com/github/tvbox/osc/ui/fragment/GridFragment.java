@@ -7,6 +7,7 @@ import android.os.Looper;
 import android.util.Base64;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;  // 新增这一行！修复 ViewGroup 符号找不到
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -85,7 +86,7 @@ public class GridFragment extends BaseLazyFragment {
         btnEnterLive.setOnClickListener(v -> enterLive());
         emptyLayout.addView(btnEnterLive);
 
-        // 把 emptyLayout 添加到 Fragment 视图（假设 fragment_grid.xml 是空容器）
+        // 把 emptyLayout 添加到 Fragment 根视图
         View root = getView();
         if (root instanceof ViewGroup) {
             ((ViewGroup) root).removeAllViews();
@@ -144,23 +145,23 @@ public class GridFragment extends BaseLazyFragment {
         String liveUrl = Hawk.get(HawkConfig.LIVE_URL, "").trim();
         if (liveUrl.isEmpty()) {
             Toast.makeText(requireContext(), "未检测到直播源\n点击屏幕任意位置添加", Toast.LENGTH_LONG).show();
-            // 取消自动进入（如果有定时器）
+            // 取消自动进入定时器
             if (autoEnterRunnable != null) {
                 autoEnterHandler.removeCallbacks(autoEnterRunnable);
             }
         } else {
             Toast.makeText(requireContext(), "直播源已保存\n3秒后自动进入直播（或点击按钮立即进入）", Toast.LENGTH_LONG).show();
 
-            // 启动自动进入定时器（3秒后自动跳转）
-            autoEnterRunnable = () -> enterLive();
-            autoEnterHandler.postDelayed(autoEnterRunnable, 3000);  // 3000ms = 3秒，可改成5000为5秒
+            // 启动自动进入（3秒后）
+            autoEnterRunnable = this::enterLive;
+            autoEnterHandler.postDelayed(autoEnterRunnable, 3000);
         }
     }
 
     @Override
     public void onPause() {
         super.onPause();
-        // 离开页面时取消自动进入定时器，避免意外跳转
+        // 离开页面取消自动进入
         if (autoEnterRunnable != null) {
             autoEnterHandler.removeCallbacks(autoEnterRunnable);
         }
