@@ -9,13 +9,10 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import com.github.tvbox.osc.R;
-import com.github.tvbox.osc.api.ApiConfig;
 import com.github.tvbox.osc.base.BaseLazyFragment;
 import com.github.tvbox.osc.ui.activity.LivePlayActivity;
 import com.github.tvbox.osc.ui.activity.SettingActivity;
 import com.github.tvbox.osc.ui.adapter.GridAdapter;
-import com.github.tvbox.osc.util.HawkConfig;
-import com.orhanobut.hawk.Hawk;
 import com.owen.tvrecyclerview.widget.TvRecyclerView;
 import com.owen.tvrecyclerview.widget.V7GridLayoutManager;
 
@@ -31,6 +28,11 @@ public class GridFragment extends BaseLazyFragment {
 
     public static GridFragment newInstance() {
         return new GridFragment();
+    }
+
+    // 兼容 HomeActivity 原版调用（忽略 SortData 参数）
+    public static GridFragment newInstance(com.github.tvbox.osc.bean.MovieSort.SortData sortData) {
+        return newInstance();
     }
 
     @Override
@@ -53,11 +55,13 @@ public class GridFragment extends BaseLazyFragment {
         mGridView.setAdapter(gridAdapter);
         gridAdapter.setEnableLoadMore(false);
 
+        // 长按任意位置 → 进入设置页添加源
         mGridView.setOnLongClickListener(v -> {
             jumpActivity(SettingActivity.class);
             return true;
         });
 
+        // 自定义空状态布局
         emptyLayout = new LinearLayout(requireContext());
         emptyLayout.setOrientation(LinearLayout.VERTICAL);
         emptyLayout.setGravity(Gravity.CENTER);
@@ -92,16 +96,14 @@ public class GridFragment extends BaseLazyFragment {
         );
         params.topMargin = 20;
         btnEnterLive.setLayoutParams(params);
-        btnEnterLive.setOnClickListener(v -> {
-            jumpActivity(LivePlayActivity.class);
-        });
+        btnEnterLive.setOnClickListener(v -> jumpActivity(LivePlayActivity.class));
         emptyLayout.addView(btnEnterLive);
 
         gridAdapter.setEmptyView(emptyLayout);
     }
 
     private void updateUIState() {
-        // 始终显示“进入直播”按钮，让 LivePlayActivity 自己处理源
+        // 始终显示两个按钮，让用户手动进入直播触发原版解析
         btnAddSource.setVisibility(View.VISIBLE);
         btnEnterLive.setVisibility(View.VISIBLE);
         btnEnterLive.requestFocus();
@@ -111,20 +113,13 @@ public class GridFragment extends BaseLazyFragment {
     public void onResume() {
         super.onResume();
 
-        // 从设置返回后，检查是否保存了直播源 URL，并提示用户
-        new Thread(() -> {
-            String liveUrl = Hawk.get(HawkConfig.LIVE_URL, "");
-            final String msg;
-            if (liveUrl.isEmpty()) {
-                msg = "未检测到直播源地址，请在设置中添加";
-            } else {
-                msg = "已检测到直播源地址：" + liveUrl + "\n请点击“进入直播”查看频道（自动解析）";
-            }
+        String liveUrl = Hawk.get(HawkConfig.LIVE_URL, "");
+        if (liveUrl.isEmpty()) {
+            Toast.makeText(requireContext(), "未检测到直播源地址，请在设置中添加", Toast.LENGTH_LONG).show();
+        } else {
+            Toast.makeText(requireContext(), "已保存直播源：" + liveUrl + "\n点击“进入直播”查看频道", Toast.LENGTH_LONG).show();
+        }
 
-            requireActivity().runOnUiThread(() -> {
-                updateUIState();
-                Toast.makeText(requireContext(), msg, Toast.LENGTH_LONG).show();
-            });
-        }).start();
+        updateUIState();
     }
 }
