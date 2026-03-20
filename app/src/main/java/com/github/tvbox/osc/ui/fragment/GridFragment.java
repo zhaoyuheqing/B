@@ -7,7 +7,7 @@ import android.os.Looper;
 import android.util.Base64;
 import android.view.Gravity;
 import android.view.View;
-import android.view.ViewGroup;  // 新增这一行！修复 ViewGroup 符号找不到
+import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -86,7 +86,7 @@ public class GridFragment extends BaseLazyFragment {
         btnEnterLive.setOnClickListener(v -> enterLive());
         emptyLayout.addView(btnEnterLive);
 
-        // 把 emptyLayout 添加到 Fragment 根视图
+        // 添加 emptyLayout 到根视图
         View root = getView();
         if (root instanceof ViewGroup) {
             ((ViewGroup) root).removeAllViews();
@@ -94,7 +94,7 @@ public class GridFragment extends BaseLazyFragment {
         }
     }
 
-    // ==================== 核心：手动包装 + 进入直播 ====================
+    // ==================== 核心修复：完整触发 loadConfig → parseJson ====================
     private void enterLive() {
         String liveUrl = Hawk.get(HawkConfig.LIVE_URL, "").trim();
         if (liveUrl.isEmpty()) {
@@ -103,29 +103,33 @@ public class GridFragment extends BaseLazyFragment {
             return;
         }
 
-        try {
-            String base64 = Base64.encodeToString(liveUrl.getBytes("UTF-8"),
-                    Base64.DEFAULT | Base64.URL_SAFE | Base64.NO_WRAP);
-            String proxyUrl = "http://127.0.0.1:9978/proxy?do=live&type=txt&ext=" + base64.trim();
+        ApiConfig apiConfig = ApiConfig.get();
 
-            ApiConfig apiConfig = ApiConfig.get();
-            apiConfig.getChannelGroupList().clear();
+        // 关键：主动调用 loadConfig，确保 parseJson 完整执行（IJK + proxy 包装 + 其他初始化）
+        apiConfig.loadConfig(false, new ApiConfig.LoadConfigCallback() {
+            @Override
+            public void success() {
+                Toast.makeText(requireContext(), "源配置已初始化，即将进入播放...", Toast.LENGTH_SHORT).show();
 
-            LiveChannelGroup group = new LiveChannelGroup();
-            group.setGroupName(proxyUrl);
-            group.setLiveChannels(new ArrayList<>());
-            apiConfig.getChannelGroupList().add(group);
+                // 延迟跳转，确保 parseJson 完成
+                new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                    startActivity(new Intent(requireContext(), LivePlayActivity.class));
+                }, 500);
+            }
 
-            Toast.makeText(requireContext(), "直播源已包装，即将进入播放...", Toast.LENGTH_SHORT).show();
-
-            // 延迟跳转，确保列表更新
-            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            @Override
+            public void error(String msg) {
+                Toast.makeText(requireContext(), "源初始化失败: " + msg + "\n仍尝试进入直播", Toast.LENGTH_LONG).show();
+                // 失败也尝试进入（容错）
                 startActivity(new Intent(requireContext(), LivePlayActivity.class));
-            }, 400);
+            }
 
-        } catch (Exception e) {
-            Toast.makeText(requireContext(), "包装失败: " + e.getMessage(), Toast.LENGTH_LONG).show();
-        }
+            @Override
+            public void retry() {
+                // 可重试一次
+                new Handler(Looper.getMainLooper()).postDelayed(() -> enterLive(), 2000);
+            }
+        }, requireActivity());
     }
 
     // 点击屏幕任意位置跳转设置
@@ -145,14 +149,12 @@ public class GridFragment extends BaseLazyFragment {
         String liveUrl = Hawk.get(HawkConfig.LIVE_URL, "").trim();
         if (liveUrl.isEmpty()) {
             Toast.makeText(requireContext(), "未检测到直播源\n点击屏幕任意位置添加", Toast.LENGTH_LONG).show();
-            // 取消自动进入定时器
             if (autoEnterRunnable != null) {
                 autoEnterHandler.removeCallbacks(autoEnterRunnable);
             }
         } else {
             Toast.makeText(requireContext(), "直播源已保存\n3秒后自动进入直播（或点击按钮立即进入）", Toast.LENGTH_LONG).show();
 
-            // 启动自动进入（3秒后）
             autoEnterRunnable = this::enterLive;
             autoEnterHandler.postDelayed(autoEnterRunnable, 3000);
         }
@@ -161,7 +163,6 @@ public class GridFragment extends BaseLazyFragment {
     @Override
     public void onPause() {
         super.onPause();
-        // 离开页面取消自动进入
         if (autoEnterRunnable != null) {
             autoEnterHandler.removeCallbacks(autoEnterRunnable);
         }
