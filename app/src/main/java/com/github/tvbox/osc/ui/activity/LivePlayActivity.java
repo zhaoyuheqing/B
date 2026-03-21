@@ -1720,22 +1720,29 @@ public class LivePlayActivity extends BaseActivity {
     }
 
     private void initLiveChannelList() {
-        List<LiveChannelGroup> list = ApiConfig.get().getChannelGroupList();
-        if (list.isEmpty()) {
-            Toast.makeText(App.getInstance(), getString(R.string.act_live_play_empty_channel), Toast.LENGTH_SHORT).show();
-            finish();
-            return;
-        }
+    List<LiveChannelGroup> list = ApiConfig.get().getChannelGroupList();
 
-        if (list.size() == 1 && list.get(0).getGroupName().startsWith("http://127.0.0.1")) {
-            loadProxyLives(list.get(0).getGroupName());
-        } else {
-            liveChannelGroupList.clear();
-            liveChannelGroupList.addAll(list);
-            showSuccess();
-            initLiveState();
-        }
+    // === 修改点：不再强制退出，即使列表为空也继续显示界面 ===
+    if (list.isEmpty()) {
+        Toast.makeText(this, "当前没有直播频道\n请返回添加直播源", Toast.LENGTH_LONG).show();
+        
+        // 清空左侧分组和右侧频道列表，显示空状态
+        liveChannelGroupList.clear();
+        showSuccess();           // 显示正常界面（不再 finish）
+        initLiveState();         // 初始化 UI（分组、设置等）
+        return;
     }
+
+    // 原有逻辑保留：如果有 127 开头的虚拟分组，则正常走 loadProxyLives
+    if (list.size() == 1 && list.get(0).getGroupName().startsWith("http://127.0.0.1")) {
+        loadProxyLives(list.get(0).getGroupName());
+    } else {
+        liveChannelGroupList.clear();
+        liveChannelGroupList.addAll(list);
+        showSuccess();
+        initLiveState();
+    }
+}
 
     //加载列表
     public void loadProxyLives(String url) {
