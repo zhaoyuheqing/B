@@ -1,6 +1,7 @@
-name: Build TVBox LiveOnly Debug (arm64)
+name: Build TVBox APK - Single Debug Variant (arm64 generic normal debug)
 
-on: [workflow_dispatch]
+on:
+  workflow_dispatch:
 
 jobs:
   build:
@@ -10,16 +11,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0
 
-      - name: Cache Gradle dependencies
+      - name: Cache Gradle dependencies and wrapper
         uses: actions/cache@v4
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: gradle-${{ runner.os }}-
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle', '**/*.gradle.kts', '**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml', '**/gradle/libs.versions.toml') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -31,102 +33,73 @@ jobs:
         run: chmod +x gradlew
 
       - name: Clean previous builds
-        run: ./gradlew clean --no-daemon
+        run: ./gradlew clean
 
-      - name: Build arm64 debug (optimized)
-        id: build_step
+      # 构建 debug 版，保存完整日志（失败时 workflow 会停止）
+      - name: Assemble single debug variant
         run: |
           ./gradlew assembleArm64GenericNormalDebug \
-            --no-daemon \
             --parallel \
             --configure-on-demand \
             --max-workers=4 \
             --stacktrace \
-            --info > compile_log.txt 2>&1
+            --info \
+            --debug > compile_log.txt 2>&1
 
-      - name: Find and rename APK (only on success)
+      # 打印所有生成的 APK 文件路径（用于确认位置）
+      - name: Print all generated APK locations
+        if: always()
+        run: |
+          echo "======================================"
+          echo "寻找所有 .apk 文件（完整路径）："
+          find app/build/outputs -type f -name "*.apk" 2>/dev/null || echo "未找到任何 .apk 文件"
+          echo ""
+          echo "======================================"
+          echo "outputs/apk 目录结构："
+          ls -laR app/build/outputs/apk 2>/dev/null || echo "目录不存在或为空"
+          echo "======================================"
+
+      # 失败时打印关键错误信息（现在会正常触发）
+      - name: Extract & Print Compile Errors (on failure)
+        if: failure()
+        run: |
+          echo "=== BUILD FAILED - ERROR SUMMARY (copy all below to Grok) ==="
+          echo ""
+          echo "1. All lines containing 'error:' (javac compilation errors):"
+          grep -i -B 5 -A 30 "error:" compile_log.txt | head -n 100 || echo "No 'error:' lines found"
+          echo ""
+          echo "2. Failed task context:"
+          grep -B 10 -A 30 "failed for task" compile_log.txt || echo "No failed task found"
+          echo ""
+          echo "3. Errors related to HomeActivity.java:"
+          grep -i -B 5 -A 30 "HomeActivity.java" compile_log.txt || echo "No HomeActivity errors found"
+          echo ""
+          echo "4. Last 200 lines of log (errors usually here):"
+          tail -n 200 compile_log.txt
+          echo ""
+          echo "=== END OF ERROR SUMMARY ==="
+
+      # 只在成功时：查找 → 重命名 → 准备上传单个平铺 APK
+      - name: Prepare single flat APK for upload (on success only)
         if: success()
         run: |
-          APK_PATH=$(find app/build/outputs -type f -name "*arm64*.apk" | head -n 1)
-          if [ -f "$APK_PATH" ]; then
-            mv "$APK_PATH" TVBox-LiveOnly-debug-arm64.apk
-            echo "APK renamed and ready for upload:"
-            ls -lh TVBox-LiveOnly-debug-arm64.apk
+          APK_SOURCE=$(find app/build/outputs -type f -name "*arm64*.apk" | head -n 1)
+          if [ -n "$APK_SOURCE" ] && [ -f "$APK_SOURCE" ]; then
+            mv "$APK_SOURCE" TVBox-debug-arm64-generic-normal.apk
+            echo "APK prepared:"
+            ls -lh TVBox-debug-arm64-generic-normal.apk
           else
-            echo "APK not found even though build reports success"
+            echo "No matching arm64 APK found"
             exit 1
           fi
 
-      - name: On failure - Print critical errors (with red highlight) & generate summary file
-        if: failure()
-        run: |
-          RED='\033[1;31m'
-          BOLD='\033[1m'
-          RESET='\033[0m'
-
-          echo ""
-          echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-          echo -e "${RED}🚨 BUILD FAILED - CRITICAL ERROR SUMMARY${RESET}"
-          echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-          echo ""
-
-          echo "Build time: $(date '+%Y-%m-%d %H:%M:%S UTC')"
-          echo ""
-
-          echo -e "${BOLD}1. Lines containing 'error:' (±5 lines context)${RESET}"
-          echo "---------------------------------------------"
-          grep -i -C 5 "error:" compile_log.txt | sed "s/^/${RED}/; s/$/${RESET}/" || echo "(no 'error:' lines found)"
-          echo ""
-
-          echo -e "${BOLD}2. Failed task information${RESET}"
-          echo "-------------------------"
-          grep -B 10 -A 30 "Execution failed for task" compile_log.txt || echo "(no failed task messages found)"
-          echo ""
-
-          echo -e "${BOLD}3. Errors related to key files (LivePlayActivity / ApiConfig / Live)${RESET}"
-          echo "---------------------------------------------------------------"
-          grep -i -C 8 "LivePlayActivity.java\|ApiConfig.java\|Live" compile_log.txt || echo "(no matches in key files)"
-          echo ""
-
-          echo -e "${BOLD}4. Last 200 lines of build log (quick view)${RESET}"
-          echo "------------------------------------------"
-          echo "(full 400 lines saved in artifact)"
-          tail -n 200 compile_log.txt
-          echo ""
-
-          echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-          echo -e "Full details saved → ${RED}build-log-error-summary.txt${RESET}"
-          echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-          echo ""
-
-          # 生成下载用的完整纯文本文件（无颜色）
-          {
-            echo "=== BUILD FAILED - FULL ERROR SUMMARY ==="
-            echo "Build date: $(date '+%Y-%m-%d %H:%M:%S UTC')"
-            echo ""
-            echo "1. Lines containing 'error:' (with ±5 lines context)"
-            grep -i -C 5 "error:" compile_log.txt 2>/dev/null || echo "No 'error:' lines found"
-            echo ""
-            echo "2. Failed task information"
-            grep -B 10 -A 30 "Execution failed for task" compile_log.txt 2>/dev/null || echo "No failed task messages found"
-            echo ""
-            echo "3. Errors related to key files (LivePlayActivity / ApiConfig / Live)"
-            grep -i -C 8 "LivePlayActivity.java\|ApiConfig.java\|Live" compile_log.txt 2>/dev/null || echo "No matches in key files"
-            echo ""
-            echo "4. Last 400 lines of build log (most important part)"
-            tail -n 400 compile_log.txt
-            echo ""
-            echo "=== END OF ERROR SUMMARY ==="
-          } > build-log-error-summary.txt
-
-      - name: Upload artifacts
+      # 上传单个平铺的 APK 文件（失败时无此文件，artifact 会为空或只警告）
+      - name: Upload debug APK (single flat file)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: TVBox-LiveOnly-debug-arm64
-          path: |
-            TVBox-LiveOnly-debug-arm64.apk
-            build-log-error-summary.txt
-            # compile_log.txt     # 如需完整日志可临时取消注释
+          name: TVBox-debug-arm64-generic-normal
+          path: TVBox-debug-arm64-generic-normal.apk
           if-no-files-found: warn
           retention-days: 7
+          compression-level: 6
