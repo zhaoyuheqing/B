@@ -1229,6 +1229,7 @@ public class LivePlayActivity extends BaseActivity {
         epgListAdapter.setOnItemClickListener(new BaseQuickAdapter.OnItemClickListener() {
             @Override
             public void onItemClick(BaseQuickAdapter adapter, View view, int position) {
+                FastClickCheckUtil.check(view);
                 Date date = epgDateAdapter.getSelectedIndex() < 0 ? new Date() :
                         epgDateAdapter.getData().get(epgDateAdapter.getSelectedIndex()).getDateParamVal();
                 SimpleDateFormat dateFormat = new SimpleDateFormat("yyyyMMdd");
@@ -1634,39 +1635,6 @@ public class LivePlayActivity extends BaseActivity {
                         select = !Hawk.get(HawkConfig.LIVE_SKIP_PASSWORD, false);
                         Hawk.put(HawkConfig.LIVE_SKIP_PASSWORD, select);
                         break;
-//                    case 5:
-//                        // takagen99 : Added Live History list selection - 直播列表
-//                        ArrayList<String> liveHistory = Hawk.get(HawkConfig.LIVE_HISTORY, new ArrayList<String>());
-//                        if (liveHistory.isEmpty())
-//                            return;
-//                        String current = Hawk.get(HawkConfig.LIVE_URL, "");
-//                        int idx = 0;
-//                        if (liveHistory.contains(current))
-//                            idx = liveHistory.indexOf(current);
-//                        ApiHistoryDialog dialog = new ApiHistoryDialog(LivePlayActivity.this);
-//                        dialog.setTip(getString(R.string.dia_history_live));
-//                        dialog.setAdapter(new ApiHistoryDialogAdapter.SelectDialogInterface() {
-//                            @Override
-//                            public void click(String liveURL) {
-//                                Hawk.put(HawkConfig.LIVE_URL, liveURL);
-//                                liveChannelGroupList.clear();
-//                                try {
-//                                    liveURL = Base64.encodeToString(liveURL.getBytes("UTF-8"), Base64.DEFAULT | Base64.URL_SAFE | Base64.NO_WRAP);
-//                                    liveURL = "http://127.0.0.1:9978/proxy?do=live&type=txt&ext=" + liveURL;
-//                                    loadProxyLives(liveURL);
-//                                } catch (Throwable th) {
-//                                    th.printStackTrace();
-//                                }
-//                                dialog.dismiss();
-//                            }
-//
-//                            @Override
-//                            public void del(String value, ArrayList<String> data) {
-//                                Hawk.put(HawkConfig.LIVE_HISTORY, data);
-//                            }
-//                        }, liveHistory, idx);
-//                        dialog.show();
-//                        break;
                 }
                 liveSettingItemAdapter.selectItem(position, select, false);
                 break;
@@ -1719,46 +1687,58 @@ public class LivePlayActivity extends BaseActivity {
         mHandler.postDelayed(mHideSettingLayoutRun, 5000);
     }
 
+    // ============================================
+    // 修改位置 1：initLiveChannelList() - 空列表不退出
+    // ============================================
     private void initLiveChannelList() {
-    List<LiveChannelGroup> list = ApiConfig.get().getChannelGroupList();
+        List<LiveChannelGroup> list = ApiConfig.get().getChannelGroupList();
 
-    // === 修改点：不再强制退出，即使列表为空也继续显示界面 ===
-    if (list.isEmpty()) {
-        Toast.makeText(this, "当前没有直播频道\n请返回添加直播源", Toast.LENGTH_LONG).show();
-        
-        // 清空左侧分组和右侧频道列表，显示空状态
-        liveChannelGroupList.clear();
-        showSuccess();           // 显示正常界面（不再 finish）
-        initLiveState();         // 初始化 UI（分组、设置等）
-        return;
+        // 修改：不再强制退出，即使列表为空也继续显示界面
+        if (list.isEmpty()) {
+            Toast.makeText(this, "当前没有直播频道\n请返回设置添加直播源", Toast.LENGTH_LONG).show();
+            
+            // 清空左侧分组和右侧频道列表，显示空状态
+            liveChannelGroupList.clear();
+            showSuccess();           // 显示正常界面（不再 finish）
+            initLiveState();         // 初始化 UI（分组、设置等）
+            return;
+        }
+
+        // 原有逻辑保留：如果有 127 开头的虚拟分组，则正常走 loadProxyLives
+        if (list.size() == 1 && list.get(0).getGroupName().startsWith("http://127.0.0.1")) {
+            loadProxyLives(list.get(0).getGroupName());
+        } else {
+            liveChannelGroupList.clear();
+            liveChannelGroupList.addAll(list);
+            showSuccess();
+            initLiveState();
+        }
     }
 
-    // 原有逻辑保留：如果有 127 开头的虚拟分组，则正常走 loadProxyLives
-    if (list.size() == 1 && list.get(0).getGroupName().startsWith("http://127.0.0.1")) {
-        loadProxyLives(list.get(0).getGroupName());
-    } else {
-        liveChannelGroupList.clear();
-        liveChannelGroupList.addAll(list);
-        showSuccess();
-        initLiveState();
-    }
-}
-
-    //加载列表
+    // ============================================
+    // 修改位置 2：loadProxyLives() - onError 不退出
+    // ============================================
     public void loadProxyLives(String url) {
         try {
             Uri parsedUrl = Uri.parse(url);
             url = new String(Base64.decode(parsedUrl.getQueryParameter("ext"), Base64.DEFAULT | Base64.URL_SAFE | Base64.NO_WRAP), "UTF-8");
             if (url.equals("")) {
                 Toast.makeText(App.getInstance(), getString(R.string.act_live_play_empty_live_url), Toast.LENGTH_LONG).show();
-                finish();
+                // 修改：不 finish()，显示空状态
+                liveChannelGroupList.clear();
+                showSuccess();
+                initLiveState();
                 return;
             }
         } catch (Throwable th) {
             Toast.makeText(App.getInstance(), getString(R.string.act_live_play_empty_channel), Toast.LENGTH_SHORT).show();
-            finish();
+            // 修改：不 finish()，显示空状态
+            liveChannelGroupList.clear();
+            showSuccess();
+            initLiveState();
             return;
         }
+
         showLoading();
         OkGo.<String>get(url).execute(new AbsCallback<String>() {
 
@@ -1778,7 +1758,10 @@ public class LivePlayActivity extends BaseActivity {
                 List<LiveChannelGroup> list = ApiConfig.get().getChannelGroupList();
                 if (list.isEmpty()) {
                     Toast.makeText(App.getInstance(), getString(R.string.act_live_play_empty_channel), Toast.LENGTH_SHORT).show();
-                    finish();
+                    // 修改：不 finish()，显示空状态
+                    liveChannelGroupList.clear();
+                    showSuccess();
+                    initLiveState();
                     return;
                 }
                 liveChannelGroupList.clear();
@@ -1794,17 +1777,15 @@ public class LivePlayActivity extends BaseActivity {
             }
 
             @Override
-public void onError(Response<String> response) {
-    super.onError(response);
-    Toast.makeText(App.getInstance(), "无法访问直播源（网络或地址问题）", Toast.LENGTH_LONG).show();
-    
-    // 修改：不 finish()，改为显示空状态界面
-    liveChannelGroupList.clear();
-    showSuccess();
-    initLiveState();
-    
-    // 可选：显示更明显的空提示（如果已添加 tvEmptyTip，可调用 showEmptyTip()）
-}
+            public void onError(Response<String> response) {
+                super.onError(response);
+                Toast.makeText(App.getInstance(), "无法访问直播源（网络或地址问题）", Toast.LENGTH_LONG).show();
+                
+                // 修改：不 finish()，显示空状态界面
+                liveChannelGroupList.clear();
+                showSuccess();
+                initLiveState();
+            }
         });
     }
 
@@ -1825,7 +1806,32 @@ public void onError(Response<String> response) {
         }
     }
 
+    // ============================================
+    // 修改位置 3：initLiveState() - 空列表保护（防止 IndexOutOfBoundsException）
+    // ============================================
     private void initLiveState() {
+        // 新增：空列表保护，防止后续操作越界
+        if (liveChannelGroupList.isEmpty()) {
+            // 避免选中不存在的分组
+            currentChannelGroupIndex = -1;
+            currentLiveChannelIndex = -1;
+            currentLiveChannelItem = null;
+
+            // 清空或重置适配器数据
+            liveChannelGroupAdapter.setNewData(new ArrayList<>());
+            liveChannelItemAdapter.setNewData(new ArrayList<>());
+            
+            // 可选：隐藏视频播放区域
+            if (mVideoView != null) {
+                mVideoView.setVisibility(View.GONE);
+            }
+            
+            // 显示提示（如果有 tvEmptyTip，可调用 showEmptyTip()）
+            Toast.makeText(this, "暂无直播频道，请返回设置检查源", Toast.LENGTH_LONG).show();
+            return;  // 直接返回，不执行后续选中逻辑
+        }
+
+        // 原有代码（正常有源时执行）
         int lastChannelGroupIndex = -1;
         int lastLiveChannelIndex = -1;
         Intent intent = getIntent();
