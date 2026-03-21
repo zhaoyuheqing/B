@@ -57,45 +57,49 @@ jobs:
             exit 1
           fi
 
-      - name: On failure - Print critical errors to console & generate summary file
+      - name: On failure - Print critical errors (with red highlight) & generate summary file
         if: failure()
         run: |
+          RED='\033[1;31m'
+          BOLD='\033[1m'
+          RESET='\033[0m'
+
           echo ""
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "🚨 BUILD FAILED - CRITICAL ERROR SUMMARY"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+          echo -e "${RED}🚨 BUILD FAILED - CRITICAL ERROR SUMMARY${RESET}"
+          echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
           echo ""
 
           echo "Build time: $(date '+%Y-%m-%d %H:%M:%S UTC')"
           echo ""
 
-          echo "1. Lines containing 'error:' (±5 lines context)"
+          echo -e "${BOLD}1. Lines containing 'error:' (±5 lines context)${RESET}"
           echo "---------------------------------------------"
-          grep -i -C 5 "error:" compile_log.txt || echo "(no 'error:' lines found)"
+          grep -i -C 5 "error:" compile_log.txt | sed "s/^/${RED}/; s/$/${RESET}/" || echo "(no 'error:' lines found)"
           echo ""
 
-          echo "2. Failed task information"
+          echo -e "${BOLD}2. Failed task information${RESET}"
           echo "-------------------------"
           grep -B 10 -A 30 "Execution failed for task" compile_log.txt || echo "(no failed task messages found)"
           echo ""
 
-          echo "3. Errors related to key files (LivePlayActivity / ApiConfig / Live)"
+          echo -e "${BOLD}3. Errors related to key files (LivePlayActivity / ApiConfig / Live)${RESET}"
           echo "---------------------------------------------------------------"
           grep -i -C 8 "LivePlayActivity.java\|ApiConfig.java\|Live" compile_log.txt || echo "(no matches in key files)"
           echo ""
 
-          echo "4. Last 200 lines of build log (quick view)"
+          echo -e "${BOLD}4. Last 200 lines of build log (quick view)${RESET}"
           echo "------------------------------------------"
           echo "(full 400 lines saved in artifact)"
           tail -n 200 compile_log.txt
           echo ""
 
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "Full details saved → build-log-error-summary.txt"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+          echo -e "Full details saved → ${RED}build-log-error-summary.txt${RESET}"
+          echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
           echo ""
 
-          # 生成供下载的完整版文件
+          # 生成下载用的完整纯文本文件（无颜色）
           {
             echo "=== BUILD FAILED - FULL ERROR SUMMARY ==="
             echo "Build date: $(date '+%Y-%m-%d %H:%M:%S UTC')"
@@ -123,6 +127,6 @@ jobs:
           path: |
             TVBox-LiveOnly-debug-arm64.apk
             build-log-error-summary.txt
-            # compile_log.txt     # 调试时可临时打开，生产环境建议注释掉以减少上传体积
+            # compile_log.txt     # 如需完整日志可临时取消注释
           if-no-files-found: warn
           retention-days: 7
