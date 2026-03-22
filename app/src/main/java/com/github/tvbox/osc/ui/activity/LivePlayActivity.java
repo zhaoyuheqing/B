@@ -1536,15 +1536,7 @@ public class LivePlayActivity extends BaseActivity {
         });
     }
 
-    // 修改 selectSettingGroup 方法 - 添加空源检查和异常处理
     private void selectSettingGroup(int position, boolean focus) {
-        if (!isCurrentLiveChannelValid()) {
-            if (position != 5 && position != 6) {
-                Toast.makeText(App.getInstance(), "当前无直播源，仅可查看直播地址和退出", Toast.LENGTH_SHORT).show();
-                return;
-            }
-        }
-        
         if (focus) {
             liveSettingGroupAdapter.setFocusedGroupIndex(position);
             liveSettingItemAdapter.setFocusedItemIndex(-1);
@@ -1559,27 +1551,13 @@ public class LivePlayActivity extends BaseActivity {
             case 0://线路选择
                 if (currentLiveChannelItem != null) {
                     liveSettingItemAdapter.selectItem(currentLiveChannelItem.getSourceIndex(), true, false);
-                } else {
-                    liveSettingItemAdapter.selectItem(0, false, false);
                 }
                 break;
             case 1://画面比例
-                try {
-                    int scaleIndex = livePlayerManager.getLivePlayerScale();
-                    liveSettingItemAdapter.selectItem(scaleIndex, true, true);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    liveSettingItemAdapter.selectItem(0, true, true);
-                }
+                liveSettingItemAdapter.selectItem(livePlayerManager.getLivePlayerScale(), true, true);
                 break;
             case 2://播放解码
-                try {
-                    int playerType = livePlayerManager.getLivePlayerType();
-                    liveSettingItemAdapter.selectItem(playerType, true, true);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    liveSettingItemAdapter.selectItem(0, true, true);
-                }
+                liveSettingItemAdapter.selectItem(livePlayerManager.getLivePlayerType(), true, true);
                 break;
         }
         int scrollToPosition = liveSettingItemAdapter.getSelectedItemIndex();
@@ -1633,7 +1611,7 @@ public class LivePlayActivity extends BaseActivity {
         });
     }
 
-    // 修改 clickSettingItem 方法 - 添加异常处理
+    // 修改 clickSettingItem 方法 - 只处理画面比例和解码方式的空源逻辑
     private void clickSettingItem(int position) {
         int settingGroupIndex = liveSettingGroupAdapter.getSelectedGroupIndex();
         if (settingGroupIndex < 4) {
@@ -1643,42 +1621,28 @@ public class LivePlayActivity extends BaseActivity {
         }
         switch (settingGroupIndex) {
             case 0://线路切换
-                if (currentLiveChannelItem != null) {
-                    currentLiveChannelItem.setSourceIndex(position);
-                    playChannel(currentChannelGroupIndex, currentLiveChannelIndex, true);
-                } else {
-                    Toast.makeText(App.getInstance(), "当前无直播源，无法切换线路", Toast.LENGTH_SHORT).show();
-                }
+                currentLiveChannelItem.setSourceIndex(position);
+                playChannel(currentChannelGroupIndex, currentLiveChannelIndex, true);
                 break;
             case 1://画面比例
-                try {
-                    if (currentLiveChannelItem != null) {
-                        livePlayerManager.changeLivePlayerScale(mVideoView, position, currentLiveChannelItem.getChannelName());
-                    } else {
-                        Toast.makeText(App.getInstance(), "当前无直播源，仅保存设置", Toast.LENGTH_SHORT).show();
-                        // 仅保存设置，不应用到播放器
-                        Hawk.put(HawkConfig.PLAY_SCALE, position);
-                    }
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    Toast.makeText(App.getInstance(), "设置失败", Toast.LENGTH_SHORT).show();
+                // 无源时只保存设置，不应用到播放器
+                if (currentLiveChannelItem == null) {
+                    Hawk.put(HawkConfig.PLAY_SCALE, position);
+                    Toast.makeText(App.getInstance(), "画面比例已保存，添加直播源后生效", Toast.LENGTH_SHORT).show();
+                } else {
+                    livePlayerManager.changeLivePlayerScale(mVideoView, position, currentLiveChannelItem.getChannelName());
                 }
                 break;
             case 2://播放解码
-                try {
-                    if (currentLiveChannelItem != null) {
-                        mVideoView.release();
-                        livePlayerManager.changeLivePlayerType(mVideoView, position, currentLiveChannelItem.getChannelName());
-                        mVideoView.setUrl(currentLiveChannelItem.getUrl(), setPlayHeaders(currentLiveChannelItem.getUrl()));
-                        mVideoView.start();
-                    } else {
-                        Toast.makeText(App.getInstance(), "当前无直播源，仅保存设置", Toast.LENGTH_SHORT).show();
-                        // 仅保存设置，不应用到播放器
-                        Hawk.put(HawkConfig.PLAY_TYPE, position);
-                    }
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    Toast.makeText(App.getInstance(), "设置失败", Toast.LENGTH_SHORT).show();
+                // 无源时只保存设置，不应用到播放器
+                if (currentLiveChannelItem == null) {
+                    Hawk.put(HawkConfig.PLAY_TYPE, position);
+                    Toast.makeText(App.getInstance(), "解码方式已保存，添加直播源后生效", Toast.LENGTH_SHORT).show();
+                } else {
+                    mVideoView.release();
+                    livePlayerManager.changeLivePlayerType(mVideoView, position, currentLiveChannelItem.getChannelName());
+                    mVideoView.setUrl(currentLiveChannelItem.getUrl(), setPlayHeaders(currentLiveChannelItem.getUrl()));
+                    mVideoView.start();
                 }
                 break;
             case 3://超时换源
