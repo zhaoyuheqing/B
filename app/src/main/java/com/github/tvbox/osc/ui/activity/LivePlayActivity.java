@@ -1915,37 +1915,32 @@ public class LivePlayActivity extends BaseActivity {
     }
 
     private void initLiveState() {
-        if (liveChannelGroupList.isEmpty() || 
-            (liveChannelGroupList.size() == 1 && liveChannelGroupList.get(0).getLiveChannels().isEmpty())) {
-            tv_channelname.setText("无直播源");
-            tv_channelnum.setText("");
-            tv_source.setText("0/0");
-            tv_size.setText("");
-            return;
-        }
-        
-        // 从 Hawk 加载保存的值到临时变量
-        int savedScale = Hawk.get(HawkConfig.PLAY_SCALE, 0);
-        int savedType = Hawk.get(HawkConfig.PLAY_TYPE, 0);
-        tempPlayerScale = savedScale;
-        tempPlayerType = savedType;
-        
-        int lastChannelGroupIndex = -1;
-        int lastLiveChannelIndex = -1;
-        Intent intent = getIntent();
-        if (intent != null && intent.getExtras() != null) {
-            Bundle bundle = intent.getExtras();
-            lastChannelGroupIndex = bundle.getInt("groupIndex", 0);
-            lastLiveChannelIndex = bundle.getInt("channelIndex", 0);
-        } else {
-            Pair<Integer, Integer> lastChannel = JavaUtil.findLiveLastChannel(liveChannelGroupList);
-            lastChannelGroupIndex = lastChannel.getFirst();
-            lastLiveChannelIndex = lastChannel.getSecond();
-        }
+    if (liveChannelGroupList.isEmpty() || 
+        (liveChannelGroupList.size() == 1 && liveChannelGroupList.get(0).getLiveChannels().isEmpty())) {
+        tv_channelname.setText("无直播源");
+        tv_channelnum.setText("");
+        tv_source.setText("0/0");
+        tv_size.setText("");
+        return;
+    }
+    
+    int lastChannelGroupIndex = -1;
+    int lastLiveChannelIndex = -1;
+    Intent intent = getIntent();
+    if (intent != null && intent.getExtras() != null) {
+        Bundle bundle = intent.getExtras();
+        lastChannelGroupIndex = bundle.getInt("groupIndex", 0);
+        lastLiveChannelIndex = bundle.getInt("channelIndex", 0);
+    } else {
+        Pair<Integer, Integer> lastChannel = JavaUtil.findLiveLastChannel(liveChannelGroupList);
+        lastChannelGroupIndex = lastChannel.getFirst();
+        lastLiveChannelIndex = lastChannel.getSecond();
+    }
 
-        livePlayerManager.init(mVideoView);
-        // ✅ 添加这段：如果有源，从 Hawk 读取保存的设置并应用
-        if (currentLiveChannelItem != null) {
+    livePlayerManager.init(mVideoView);
+    
+    // ✅ 从 Hawk 读取保存的设置并应用到播放器
+    if (currentLiveChannelItem != null) {
         int savedScale = Hawk.get(HawkConfig.PLAY_SCALE, 0);
         int savedType = Hawk.get(HawkConfig.PLAY_TYPE, 0);
         livePlayerManager.changeLivePlayerScale(mVideoView, savedScale, currentLiveChannelItem.getChannelName());
@@ -1953,72 +1948,16 @@ public class LivePlayActivity extends BaseActivity {
         livePlayerManager.changeLivePlayerType(mVideoView, savedType, currentLiveChannelItem.getChannelName());
         mVideoView.setUrl(currentLiveChannelItem.getUrl(), setPlayHeaders(currentLiveChannelItem.getUrl()));
         mVideoView.start();
-        }
-        // 如果有源，将保存的设置应用到播放器
-        if (currentLiveChannelItem != null) {
-            livePlayerManager.changeLivePlayerScale(mVideoView, savedScale, currentLiveChannelItem.getChannelName());
-            mVideoView.release();
-            livePlayerManager.changeLivePlayerType(mVideoView, savedType, currentLiveChannelItem.getChannelName());
-            mVideoView.setUrl(currentLiveChannelItem.getUrl(), setPlayHeaders(currentLiveChannelItem.getUrl()));
-            mVideoView.start();
-            // 清除临时变量
-            tempPlayerScale = -1;
-            tempPlayerType = -1;
-        }
-        
-        showTime();
-        showNetSpeed();
-        tvLeftChannelListLayout.setVisibility(View.INVISIBLE);
-        tvRightSettingLayout.setVisibility(View.INVISIBLE);
-
-        liveChannelGroupAdapter.setNewData(liveChannelGroupList);
-        selectChannelGroup(lastChannelGroupIndex, false, lastLiveChannelIndex);
     }
+    
+    showTime();
+    showNetSpeed();
+    tvLeftChannelListLayout.setVisibility(View.INVISIBLE);
+    tvRightSettingLayout.setVisibility(View.INVISIBLE);
 
-    private boolean isListOrSettingLayoutVisible() {
-        return tvLeftChannelListLayout.getVisibility() == View.VISIBLE || tvRightSettingLayout.getVisibility() == View.VISIBLE;
-    }
-
-    private void initLiveSettingGroupList() {
-        ArrayList<String> groupNames = new ArrayList<>(Arrays.asList("线路选择", "画面比例", "播放解码", "超时换源", "偏好设置", "直播地址", "退出直播"));
-        ArrayList<ArrayList<String>> itemsArrayList = new ArrayList<>();
-        ArrayList<String> sourceItems = new ArrayList<>();
-        ArrayList<String> scaleItems = new ArrayList<>(Arrays.asList("默认", "16:9", "4:3", "填充", "原始", "裁剪"));
-        ArrayList<String> playerDecoderItems = new ArrayList<>(Arrays.asList("系统", "ijk硬解", "ijk软解", "exo"));
-        ArrayList<String> timeoutItems = new ArrayList<>(Arrays.asList("关", "5s", "10s", "15s", "20s", "25s", "30s"));
-        ArrayList<String> personalSettingItems = new ArrayList<>(Arrays.asList("显示时间", "显示网速", "换台反转", "跨选分类", "关闭密码"));
-        ArrayList<String> liveAdd = new ArrayList<>(Arrays.asList("列表历史"));
-        ArrayList<String> exitConfirm = new ArrayList<>(Arrays.asList("确定"));
-        itemsArrayList.add(sourceItems);
-        itemsArrayList.add(scaleItems);
-        itemsArrayList.add(playerDecoderItems);
-        itemsArrayList.add(timeoutItems);
-        itemsArrayList.add(personalSettingItems);
-        itemsArrayList.add(liveAdd);
-        itemsArrayList.add(exitConfirm);
-
-        liveSettingGroupList.clear();
-        for (int i = 0; i < groupNames.size(); i++) {
-            LiveSettingGroup liveSettingGroup = new LiveSettingGroup();
-            ArrayList<LiveSettingItem> liveSettingItemList = new ArrayList<>();
-            liveSettingGroup.setGroupIndex(i);
-            liveSettingGroup.setGroupName(groupNames.get(i));
-            for (int j = 0; j < itemsArrayList.get(i).size(); j++) {
-                LiveSettingItem liveSettingItem = new LiveSettingItem();
-                liveSettingItem.setItemIndex(j);
-                liveSettingItem.setItemName(itemsArrayList.get(i).get(j));
-                liveSettingItemList.add(liveSettingItem);
-            }
-            liveSettingGroup.setLiveSettingItems(liveSettingItemList);
-            liveSettingGroupList.add(liveSettingGroup);
-        }
-        liveSettingGroupList.get(3).getLiveSettingItems().get(Hawk.get(HawkConfig.LIVE_CONNECT_TIMEOUT, 2)).setItemSelected(true);
-        liveSettingGroupList.get(4).getLiveSettingItems().get(0).setItemSelected(Hawk.get(HawkConfig.LIVE_SHOW_TIME, false));
-        liveSettingGroupList.get(4).getLiveSettingItems().get(1).setItemSelected(Hawk.get(HawkConfig.LIVE_SHOW_NET_SPEED, false));
-        liveSettingGroupList.get(4).getLiveSettingItems().get(2).setItemSelected(Hawk.get(HawkConfig.LIVE_CHANNEL_REVERSE, false));
-        liveSettingGroupList.get(4).getLiveSettingItems().get(3).setItemSelected(Hawk.get(HawkConfig.LIVE_CROSS_GROUP, false));
-        liveSettingGroupList.get(4).getLiveSettingItems().get(4).setItemSelected(Hawk.get(HawkConfig.LIVE_SKIP_PASSWORD, false));
-    }
+    liveChannelGroupAdapter.setNewData(liveChannelGroupList);
+    selectChannelGroup(lastChannelGroupIndex, false, lastLiveChannelIndex);
+}
 
     private void loadCurrentSourceList() {
         if (currentLiveChannelItem == null) {
