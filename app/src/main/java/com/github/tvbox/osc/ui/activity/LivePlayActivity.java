@@ -1536,6 +1536,7 @@ public class LivePlayActivity extends BaseActivity {
         });
     }
 
+    // 修改 selectSettingGroup 方法 - 添加无源时的保护
     private void selectSettingGroup(int position, boolean focus) {
         if (focus) {
             liveSettingGroupAdapter.setFocusedGroupIndex(position);
@@ -1551,13 +1552,32 @@ public class LivePlayActivity extends BaseActivity {
             case 0://线路选择
                 if (currentLiveChannelItem != null) {
                     liveSettingItemAdapter.selectItem(currentLiveChannelItem.getSourceIndex(), true, false);
+                } else {
+                    // 无源时线路选择不可用，但不崩溃
+                    liveSettingItemAdapter.selectItem(0, false, false);
                 }
                 break;
             case 1://画面比例
-                liveSettingItemAdapter.selectItem(livePlayerManager.getLivePlayerScale(), true, true);
+                try {
+                    int scaleIndex = livePlayerManager.getLivePlayerScale();
+                    liveSettingItemAdapter.selectItem(scaleIndex, true, true);
+                } catch (Exception e) {
+                    // 无源时获取失败，使用默认值
+                    e.printStackTrace();
+                    int defaultScale = Hawk.get(HawkConfig.PLAY_SCALE, 0);
+                    liveSettingItemAdapter.selectItem(defaultScale, true, true);
+                }
                 break;
             case 2://播放解码
-                liveSettingItemAdapter.selectItem(livePlayerManager.getLivePlayerType(), true, true);
+                try {
+                    int playerType = livePlayerManager.getLivePlayerType();
+                    liveSettingItemAdapter.selectItem(playerType, true, true);
+                } catch (Exception e) {
+                    // 无源时获取失败，使用默认值
+                    e.printStackTrace();
+                    int defaultType = Hawk.get(HawkConfig.PLAY_TYPE, 0);
+                    liveSettingItemAdapter.selectItem(defaultType, true, true);
+                }
                 break;
         }
         int scrollToPosition = liveSettingItemAdapter.getSelectedItemIndex();
@@ -1611,7 +1631,7 @@ public class LivePlayActivity extends BaseActivity {
         });
     }
 
-    // 修改 clickSettingItem 方法 - 只处理画面比例和解码方式的空源逻辑
+    // 修改 clickSettingItem 方法 - 无源时只保存设置
     private void clickSettingItem(int position) {
         int settingGroupIndex = liveSettingGroupAdapter.getSelectedGroupIndex();
         if (settingGroupIndex < 4) {
@@ -1621,12 +1641,16 @@ public class LivePlayActivity extends BaseActivity {
         }
         switch (settingGroupIndex) {
             case 0://线路切换
-                currentLiveChannelItem.setSourceIndex(position);
-                playChannel(currentChannelGroupIndex, currentLiveChannelIndex, true);
+                if (currentLiveChannelItem != null) {
+                    currentLiveChannelItem.setSourceIndex(position);
+                    playChannel(currentChannelGroupIndex, currentLiveChannelIndex, true);
+                } else {
+                    Toast.makeText(App.getInstance(), "当前无直播源，无法切换线路", Toast.LENGTH_SHORT).show();
+                }
                 break;
             case 1://画面比例
-                // 无源时只保存设置，不应用到播放器
                 if (currentLiveChannelItem == null) {
+                    // 无源时只保存设置
                     Hawk.put(HawkConfig.PLAY_SCALE, position);
                     Toast.makeText(App.getInstance(), "画面比例已保存，添加直播源后生效", Toast.LENGTH_SHORT).show();
                 } else {
@@ -1634,8 +1658,8 @@ public class LivePlayActivity extends BaseActivity {
                 }
                 break;
             case 2://播放解码
-                // 无源时只保存设置，不应用到播放器
                 if (currentLiveChannelItem == null) {
+                    // 无源时只保存设置
                     Hawk.put(HawkConfig.PLAY_TYPE, position);
                     Toast.makeText(App.getInstance(), "解码方式已保存，添加直播源后生效", Toast.LENGTH_SHORT).show();
                 } else {
