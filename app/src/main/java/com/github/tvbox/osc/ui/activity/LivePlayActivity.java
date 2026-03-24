@@ -1600,7 +1600,6 @@ public class LivePlayActivity extends BaseActivity {
         });
     }
 
-    // 核心修改：画面比例和解码方式使用原版逻辑，无论有源无源都调用
     private void clickSettingItem(int position) {
         int settingGroupIndex = liveSettingGroupAdapter.getSelectedGroupIndex();
         if (settingGroupIndex < 4) {
@@ -1620,7 +1619,6 @@ public class LivePlayActivity extends BaseActivity {
             case 1://画面比例
                 try {
                     // 无论有源无源，都调用原方法
-                    // 无源时调用不会崩溃，只是更新内存变量
                     livePlayerManager.changeLivePlayerScale(mVideoView, position, 
                         currentLiveChannelItem != null ? currentLiveChannelItem.getChannelName() : "");
                     
@@ -1636,10 +1634,7 @@ public class LivePlayActivity extends BaseActivity {
                 break;
             case 2://播放解码
                 try {
-                    // 无论有源无源，都调用原方法
-                    // 无源时调用不会崩溃，只是更新内存变量
                     if (currentLiveChannelItem != null) {
-                        // 有源时需要重启播放器
                         mVideoView.release();
                     }
                     livePlayerManager.changeLivePlayerType(mVideoView, position, 
@@ -1739,16 +1734,10 @@ public class LivePlayActivity extends BaseActivity {
         List<LiveChannelGroup> list = ApiConfig.get().getChannelGroupList();
         if (list.isEmpty()) {
             Toast.makeText(App.getInstance(), getString(R.string.act_live_play_empty_channel), Toast.LENGTH_SHORT).show();
-            // 清空列表，不创建占位数据
             liveChannelGroupList.clear();
             showSuccess();
-            // 显示无源提示
-            tv_channelname.setText("无直播源");
-            tv_channelnum.setText("");
-            tv_source.setText("0/0");
-            tv_size.setText("");
-            tv_curr_name.setText("请先添加直播源");
-            tv_next_name.setText("");
+            // 无源时也必须调用 initLiveState 来设置布局初始状态
+            initLiveState();
             return;
         }
 
@@ -1768,28 +1757,16 @@ public class LivePlayActivity extends BaseActivity {
             url = new String(Base64.decode(parsedUrl.getQueryParameter("ext"), Base64.DEFAULT | Base64.URL_SAFE | Base64.NO_WRAP), "UTF-8");
             if (url.equals("")) {
                 Toast.makeText(App.getInstance(), getString(R.string.act_live_play_empty_live_url), Toast.LENGTH_LONG).show();
-                // 清空列表，不创建占位数据
                 liveChannelGroupList.clear();
                 showSuccess();
-                tv_channelname.setText("无直播源");
-                tv_channelnum.setText("");
-                tv_source.setText("0/0");
-                tv_size.setText("");
-                tv_curr_name.setText("请先添加直播源");
-                tv_next_name.setText("");
+                initLiveState();
                 return;
             }
         } catch (Throwable th) {
             Toast.makeText(App.getInstance(), getString(R.string.act_live_play_empty_channel), Toast.LENGTH_SHORT).show();
-            // 清空列表，不创建占位数据
             liveChannelGroupList.clear();
             showSuccess();
-            tv_channelname.setText("无直播源");
-            tv_channelnum.setText("");
-            tv_source.setText("0/0");
-            tv_size.setText("");
-            tv_curr_name.setText("请先添加直播源");
-            tv_next_name.setText("");
+            initLiveState();
             return;
         }
         showLoading();
@@ -1816,12 +1793,7 @@ public class LivePlayActivity extends BaseActivity {
                         @Override
                         public void run() {
                             LivePlayActivity.this.showSuccess();
-                            tv_channelname.setText("无直播源");
-                            tv_channelnum.setText("");
-                            tv_source.setText("0/0");
-                            tv_size.setText("");
-                            tv_curr_name.setText("请先添加直播源");
-                            tv_next_name.setText("");
+                            initLiveState();
                         }
                     });
                     return;
@@ -1842,18 +1814,12 @@ public class LivePlayActivity extends BaseActivity {
             public void onError(Response<String> response) {
                 super.onError(response);
                 Toast.makeText(App.getInstance(), getString(R.string.act_live_play_network_error), Toast.LENGTH_LONG).show();
-                // 清空列表，不创建占位数据
                 liveChannelGroupList.clear();
                 mHandler.post(new Runnable() {
                     @Override
                     public void run() {
                         LivePlayActivity.this.showSuccess();
-                        tv_channelname.setText("无直播源");
-                        tv_channelnum.setText("");
-                        tv_source.setText("0/0");
-                        tv_size.setText("");
-                        tv_curr_name.setText("请先添加直播源");
-                        tv_next_name.setText("");
+                        initLiveState();
                     }
                 });
             }
@@ -1878,36 +1844,42 @@ public class LivePlayActivity extends BaseActivity {
     }
 
     private void initLiveState() {
-        if (liveChannelGroupList.isEmpty() || 
-            (liveChannelGroupList.size() == 1 && liveChannelGroupList.get(0).getLiveChannels().isEmpty())) {
+        // 设置布局为隐藏状态
+        tvLeftChannelListLayout.setVisibility(View.INVISIBLE);
+        tvRightSettingLayout.setVisibility(View.INVISIBLE);
+        
+        livePlayerManager.init(mVideoView);
+        showTime();
+        showNetSpeed();
+
+        liveChannelGroupAdapter.setNewData(liveChannelGroupList);
+        
+        // 如果有源，正常处理
+        if (!liveChannelGroupList.isEmpty() && 
+            !(liveChannelGroupList.size() == 1 && liveChannelGroupList.get(0).getLiveChannels().isEmpty())) {
+            
+            int lastChannelGroupIndex = -1;
+            int lastLiveChannelIndex = -1;
+            Intent intent = getIntent();
+            if (intent != null && intent.getExtras() != null) {
+                Bundle bundle = intent.getExtras();
+                lastChannelGroupIndex = bundle.getInt("groupIndex", 0);
+                lastLiveChannelIndex = bundle.getInt("channelIndex", 0);
+            } else {
+                Pair<Integer, Integer> lastChannel = JavaUtil.findLiveLastChannel(liveChannelGroupList);
+                lastChannelGroupIndex = lastChannel.getFirst();
+                lastLiveChannelIndex = lastChannel.getSecond();
+            }
+            selectChannelGroup(lastChannelGroupIndex, false, lastLiveChannelIndex);
+        } else {
+            // 无源时，显示底部提示
             tv_channelname.setText("无直播源");
             tv_channelnum.setText("");
             tv_source.setText("0/0");
             tv_size.setText("");
-            return;
+            tv_curr_name.setText("请先添加直播源");
+            tv_next_name.setText("");
         }
-        
-        int lastChannelGroupIndex = -1;
-        int lastLiveChannelIndex = -1;
-        Intent intent = getIntent();
-        if (intent != null && intent.getExtras() != null) {
-            Bundle bundle = intent.getExtras();
-            lastChannelGroupIndex = bundle.getInt("groupIndex", 0);
-            lastLiveChannelIndex = bundle.getInt("channelIndex", 0);
-        } else {
-            Pair<Integer, Integer> lastChannel = JavaUtil.findLiveLastChannel(liveChannelGroupList);
-            lastChannelGroupIndex = lastChannel.getFirst();
-            lastLiveChannelIndex = lastChannel.getSecond();
-        }
-
-        livePlayerManager.init(mVideoView);
-        showTime();
-        showNetSpeed();
-        tvLeftChannelListLayout.setVisibility(View.INVISIBLE);
-        tvRightSettingLayout.setVisibility(View.INVISIBLE);
-
-        liveChannelGroupAdapter.setNewData(liveChannelGroupList);
-        selectChannelGroup(lastChannelGroupIndex, false, lastLiveChannelIndex);
     }
 
     private boolean isListOrSettingLayoutVisible() {
