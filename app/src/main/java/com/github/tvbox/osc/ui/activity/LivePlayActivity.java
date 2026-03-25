@@ -171,13 +171,12 @@ public class LivePlayActivity extends BaseActivity {
     // center BACK button
     LinearLayout mBack;
 
-    private boolean isSHIYI = false;
-    private static String shiyi_time;//时移时间
-    
-    // 回放模式标记
+    // 统一使用 isShiyiMode
     private boolean isShiyiMode = false;
     private String currentShiyiUrl = null;
     private String fallbackShiyiUrl = null;
+    private boolean hasTriedFallback = false;
+    private String currentShiyiTime = null;  // 用于显示
 
     private HashMap<String, String> setPlayHeaders(String url) {
         HashMap<String, String> header = new HashMap();
@@ -240,6 +239,85 @@ public class LivePlayActivity extends BaseActivity {
         }
         
         return result;
+    }
+
+    /**
+     * 构建回放时间参数，处理跨天情况
+     * @param targetDate 目标日期 yyyyMMdd
+     * @param startTime 开始时间 HH:mm
+     * @param endTime 结束时间 HH:mm
+     * @return [开始时间, 结束时间] yyyyMMddHHmmss格式
+     */
+    private String[] buildShiyiTimes(String targetDate, String startTime, String endTime) {
+        String startDateTime = targetDate + startTime.replace(":", "") + "30";
+        String endDateTime;
+        
+        // 检查是否跨天（结束时间小于开始时间）
+        if (endTime.compareTo(startTime) < 0) {
+            // 跨天，结束时间在第二天
+            try {
+                SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMdd");
+                Date date = sdf.parse(targetDate);
+                Calendar cal = Calendar.getInstance();
+                cal.setTime(date);
+                cal.add(Calendar.DAY_OF_MONTH, 1);
+                String nextDay = sdf.format(cal.getTime());
+                endDateTime = nextDay + endTime.replace(":", "") + "30";
+            } catch (Exception e) {
+                endDateTime = targetDate + endTime.replace(":", "") + "30";
+            }
+        } else {
+            endDateTime = targetDate + endTime.replace(":", "") + "30";
+        }
+        
+        return new String[]{startDateTime, endDateTime};
+    }
+
+    /**
+     * 检查回放时间是否有效
+     */
+    private boolean isValidShiyiTime(String startTime, String endTime) {
+        try {
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMddHHmmss");
+            long start = sdf.parse(startTime).getTime();
+            long end = sdf.parse(endTime).getTime();
+            return start < end;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * 检查是否在时移窗口内
+     */
+    private boolean isInShiyiWindow(String startTimeStr) {
+        try {
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMddHHmmss");
+            long startTime = sdf.parse(startTimeStr).getTime();
+            long currentTime = System.currentTimeMillis();
+            long diffHours = (currentTime - startTime) / (1000 * 60 * 60);
+            
+            int windowHours = Hawk.get(HawkConfig.SHIYI_WINDOW_HOURS, 2);
+            
+            if (diffHours > windowHours) {
+                Toast.makeText(this, "该时段已超出时移窗口（最多" + windowHours + "小时）", Toast.LENGTH_SHORT).show();
+                return false;
+            }
+            return true;
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
+    /**
+     * 清除回放状态
+     */
+    private void clearShiyiState() {
+        isShiyiMode = false;
+        currentShiyiUrl = null;
+        fallbackShiyiUrl = null;
+        hasTriedFallback = false;
+        currentShiyiTime = null;
     }
 
     @Override
@@ -768,7 +846,7 @@ public class LivePlayActivity extends BaseActivity {
     };
 
     private void showBottomEpg() {
-        if (isSHIYI)
+        if (isShiyiMode)  // 原来是 if (isSHIYI)
             return;
         if (channel_Name == null || channel_Name.getChannelName() == null) {
             tv_curr_name.setText("无节目信息");
@@ -887,6 +965,10 @@ public class LivePlayActivity extends BaseActivity {
 
     private boolean replayChannel() {
         if (mVideoView == null || currentLiveChannelItem == null) return true;
+        
+        // 清除回放状态
+        clearShiyiState();
+        
         mVideoView.release();
         currentLiveChannelItem = getLiveChannels(currentChannelGroupIndex).get(currentLiveChannelIndex);
         Hawk.put(HawkConfig.LIVE_CHANNEL, currentLiveChannelItem.getChannelName());
@@ -930,6 +1012,9 @@ public class LivePlayActivity extends BaseActivity {
         
         if (mVideoView == null) return true;
         mVideoView.release();
+        
+        // 切换频道时清除回放状态
+        clearShiyiState();
         
         if (!changeSource) {
             currentChannelGroupIndex = channelGroupIndex;
@@ -1129,9 +1214,7 @@ public class LivePlayActivity extends BaseActivity {
                     case VideoView.STATE_PLAYING:
                         // 播放成功，清除回放模式标记
                         if (isShiyiMode) {
-                            isShiyiMode = false;
-                            currentShiyiUrl = null;
-                            fallbackShiyiUrl = null;
+                            clearShiyiState();
                         }
                         currentLiveChangeSourceTimes = 0;
                         mHandler.removeCallbacks(mConnectTimeoutChangeSourceRun);
@@ -1144,23 +1227,19 @@ public class LivePlayActivity extends BaseActivity {
                         
                         // 如果是回放模式且失败了
                         if (isShiyiMode) {
-                            // 如果有备选URL且当前播放的不是备选URL，尝试备选
-                            if (fallbackShiyiUrl != null && !fallbackShiyiUrl.equals(currentShiyiUrl)) {
-                                Toast.makeText(App.getInstance(), "回放失败，尝试普通播放", Toast.LENGTH_SHORT).show();
-                                isSHIYI = false;
-                                isShiyiMode = false;
-                                mVideoView.setUrl(fallbackShiyiUrl, setPlayHeaders(currentLiveChannelItem.getUrl()));
+                            // 尝试备选URL
+                            if (!hasTriedFallback && fallbackShiyiUrl != null) {
+                                hasTriedFallback = true;
+                                Toast.makeText(App.getInstance(), "TVOD回放失败，尝试PLTV模式", Toast.LENGTH_SHORT).show();
+                                // 使用备选URL，传入正确的header
+                                mVideoView.setUrl(fallbackShiyiUrl, setPlayHeaders(fallbackShiyiUrl));
                                 mVideoView.start();
                                 return;
                             } else {
-                                // 回放完全失败，切换到当前直播
+                                // 回放完全失败，调用 replayChannel 切换到直播
                                 Toast.makeText(App.getInstance(), "该时段无法回放，切换到直播", Toast.LENGTH_LONG).show();
-                                isSHIYI = false;
-                                isShiyiMode = false;
-                                currentShiyiUrl = null;
-                                fallbackShiyiUrl = null;
-                                mVideoView.setUrl(currentLiveChannelItem.getUrl(), setPlayHeaders(currentLiveChannelItem.getUrl()));
-                                mVideoView.start();
+                                clearShiyiState();
+                                replayChannel();
                                 return;
                             }
                         }
@@ -1263,37 +1342,55 @@ public class LivePlayActivity extends BaseActivity {
                 dateFormat.setTimeZone(TimeZone.getTimeZone("GMT+8:00"));
                 Epginfo selectedData = epgListAdapter.getItem(position);
                 String targetDate = dateFormat.format(date);
-                String shiyiStartdate = targetDate + selectedData.originStart.replace(":", "") + "30";
-                String shiyiEnddate = targetDate + selectedData.originEnd.replace(":", "") + "30";
+                
+                // 使用跨天时间处理
+                String[] shiyiTimes = buildShiyiTimes(targetDate, selectedData.originStart, selectedData.originEnd);
+                String shiyiStartdate = shiyiTimes[0];
+                String shiyiEnddate = shiyiTimes[1];
+                
                 Date now = new Date();
                 if (now.compareTo(selectedData.startdateTime) < 0) {
+                    Toast.makeText(LivePlayActivity.this, "未到播放时间", Toast.LENGTH_SHORT).show();
                     return;
                 }
                 epgListAdapter.setSelectedEpgIndex(position);
+                
                 if (now.compareTo(selectedData.startdateTime) >= 0 && now.compareTo(selectedData.enddateTime) <= 0) {
+                    // 当前正在播放的节目 - 正常播放
                     mVideoView.release();
-                    isSHIYI = false;
+                    clearShiyiState();
                     mVideoView.setUrl(currentLiveChannelItem.getUrl(), setPlayHeaders(currentLiveChannelItem.getUrl()));
                     mVideoView.start();
                     epgListAdapter.setShiyiSelection(-1, false, timeFormat.format(date));
                 } else {
                     // 历史节目 - 时移回放
+                    // 检查回放时间是否有效
+                    if (!isValidShiyiTime(shiyiStartdate, shiyiEnddate)) {
+                        Toast.makeText(LivePlayActivity.this, "无效的回放时间", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    
+                    // 检查时移窗口
+                    if (!isInShiyiWindow(shiyiStartdate)) {
+                        return;
+                    }
+                    
                     mVideoView.release();
-                    shiyi_time = shiyiStartdate + "-" + shiyiEnddate;
-                    isSHIYI = true;
+                    currentShiyiTime = shiyiStartdate + "-" + shiyiEnddate;
+                    isShiyiMode = true;
                     
                     // 构建回放URL
-                    String[] shiyiUrls = buildShiyiUrls(currentLiveChannelItem.getUrl(), shiyi_time);
+                    String[] shiyiUrls = buildShiyiUrls(currentLiveChannelItem.getUrl(), currentShiyiTime);
                     String primaryUrl = shiyiUrls[0];
                     String fallbackUrl = shiyiUrls[1];
                     
-                    // 设置回放模式标记
-                    isShiyiMode = true;
+                    // 设置回放状态
                     currentShiyiUrl = primaryUrl;
                     fallbackShiyiUrl = fallbackUrl;
+                    hasTriedFallback = false;
                     
-                    // 先尝试首选URL（TVOD路径）
-                    mVideoView.setUrl(primaryUrl, setPlayHeaders(currentLiveChannelItem.getUrl()));
+                    // 使用实际播放的URL获取headers
+                    mVideoView.setUrl(primaryUrl, setPlayHeaders(primaryUrl));
                     mVideoView.start();
                     
                     epgListAdapter.setShiyiSelection(position, true, timeFormat.format(date));
@@ -1314,37 +1411,55 @@ public class LivePlayActivity extends BaseActivity {
                 dateFormat.setTimeZone(TimeZone.getTimeZone("GMT+8:00"));
                 Epginfo selectedData = epgListAdapter.getItem(position);
                 String targetDate = dateFormat.format(date);
-                String shiyiStartdate = targetDate + selectedData.originStart.replace(":", "") + "30";
-                String shiyiEnddate = targetDate + selectedData.originEnd.replace(":", "") + "30";
+                
+                // 使用跨天时间处理
+                String[] shiyiTimes = buildShiyiTimes(targetDate, selectedData.originStart, selectedData.originEnd);
+                String shiyiStartdate = shiyiTimes[0];
+                String shiyiEnddate = shiyiTimes[1];
+                
                 Date now = new Date();
                 if (now.compareTo(selectedData.startdateTime) < 0) {
+                    Toast.makeText(LivePlayActivity.this, "未到播放时间", Toast.LENGTH_SHORT).show();
                     return;
                 }
                 epgListAdapter.setSelectedEpgIndex(position);
+                
                 if (now.compareTo(selectedData.startdateTime) >= 0 && now.compareTo(selectedData.enddateTime) <= 0) {
+                    // 当前正在播放的节目 - 正常播放
                     mVideoView.release();
-                    isSHIYI = false;
+                    clearShiyiState();
                     mVideoView.setUrl(currentLiveChannelItem.getUrl(), setPlayHeaders(currentLiveChannelItem.getUrl()));
                     mVideoView.start();
                     epgListAdapter.setShiyiSelection(-1, false, timeFormat.format(date));
                 } else {
                     // 历史节目 - 时移回放
+                    // 检查回放时间是否有效
+                    if (!isValidShiyiTime(shiyiStartdate, shiyiEnddate)) {
+                        Toast.makeText(LivePlayActivity.this, "无效的回放时间", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    
+                    // 检查时移窗口
+                    if (!isInShiyiWindow(shiyiStartdate)) {
+                        return;
+                    }
+                    
                     mVideoView.release();
-                    shiyi_time = shiyiStartdate + "-" + shiyiEnddate;
-                    isSHIYI = true;
+                    currentShiyiTime = shiyiStartdate + "-" + shiyiEnddate;
+                    isShiyiMode = true;
                     
                     // 构建回放URL
-                    String[] shiyiUrls = buildShiyiUrls(currentLiveChannelItem.getUrl(), shiyi_time);
+                    String[] shiyiUrls = buildShiyiUrls(currentLiveChannelItem.getUrl(), currentShiyiTime);
                     String primaryUrl = shiyiUrls[0];
                     String fallbackUrl = shiyiUrls[1];
                     
-                    // 设置回放模式标记
-                    isShiyiMode = true;
+                    // 设置回放状态
                     currentShiyiUrl = primaryUrl;
                     fallbackShiyiUrl = fallbackUrl;
+                    hasTriedFallback = false;
                     
-                    // 先尝试首选URL（TVOD路径）
-                    mVideoView.setUrl(primaryUrl, setPlayHeaders(currentLiveChannelItem.getUrl()));
+                    // 使用实际播放的URL获取headers
+                    mVideoView.setUrl(primaryUrl, setPlayHeaders(primaryUrl));
                     mVideoView.start();
                     
                     epgListAdapter.setShiyiSelection(position, true, timeFormat.format(date));
