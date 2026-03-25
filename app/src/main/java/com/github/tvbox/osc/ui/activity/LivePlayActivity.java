@@ -164,7 +164,6 @@ public class LivePlayActivity extends BaseActivity {
     public String epgStringAddress = "";
     SimpleDateFormat timeFormat = new SimpleDateFormat("yyyy-MM-dd");
     private final Handler mHandler = new Handler();
-    private static LiveChannelItem channel_Name = null;
     private static final Hashtable hsEpg = new Hashtable();
     private TextView tvTime;
     private TextView tvNetSpeed;
@@ -335,8 +334,7 @@ public class LivePlayActivity extends BaseActivity {
                 return null;
             }
             String logoUrl = cacheData.optString("logoUrl", null);
-            if (logoUrl != null && !logoUrl.isEmpty() && channel_Name != null && 
-                channel_Name.getChannelName() != null && channel_Name.getChannelName().equals(channelName)) {
+            if (logoUrl != null && !logoUrl.isEmpty()) {
                 mHandler.post(() -> getTvLogo(channelName, logoUrl));
             }
             JSONArray epgArray = cacheData.optJSONArray("epgList");
@@ -406,7 +404,7 @@ public class LivePlayActivity extends BaseActivity {
         });
     }
 
-    private void fetchEpgFromNetwork(String channelName, String dateStr, Date date) {
+    private void fetchEpgFromNetwork(final String channelName, final String dateStr, final Date date) {
         bgExecutor.execute(() -> {
             try {
                 SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
@@ -460,8 +458,11 @@ public class LivePlayActivity extends BaseActivity {
                         if (!arrayList.isEmpty()) {
                             saveToFileCache(channelName, dateStr, arrayList, logoUrl);
                             mHandler.post(() -> {
-                                showEpg(date, arrayList);
-                                showBottomEpg();
+                                // 检查当前频道是否还是请求时的频道
+                                if (currentLiveChannelItem != null && channelName.equals(currentLiveChannelItem.getChannelName())) {
+                                    showEpg(date, arrayList);
+                                    showBottomEpg();
+                                }
                             });
                         }
                     }
@@ -1039,7 +1040,9 @@ public class LivePlayActivity extends BaseActivity {
     private void showEpg(Date date, ArrayList<Epginfo> arrayList) {
         if (arrayList != null && arrayList.size() > 0) {
             epgdata = arrayList;
-            if (currentLiveChannelItem != null) epgListAdapter.CanBack(currentLiveChannelItem.getinclude_back());
+            if (currentLiveChannelItem != null) {
+                epgListAdapter.CanBack(currentLiveChannelItem.getinclude_back());
+            }
             epgListAdapter.setNewData(epgdata);
             int i = -1;
             for (int size = epgdata.size() - 1; size >= 0; size--) {
@@ -1079,16 +1082,14 @@ public class LivePlayActivity extends BaseActivity {
 
     private void showBottomEpg() {
         if (isShiyiMode) return;
-        if (channel_Name == null || channel_Name.getChannelName() == null) {
+        if (currentLiveChannelItem == null || currentLiveChannelItem.getChannelName() == null) {
             tv_curr_name.setText("无节目信息");
             tv_next_name.setText("");
             return;
         }
         
         showChannelInfo();
-        
-        // 使用新的缓存系统，避免循环调用
-        String channelName = channel_Name.getChannelName();
+        String channelName = currentLiveChannelItem.getChannelName();
         SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
         Date selectedDate = epgDateAdapter.getData().get(epgDateAdapter.getSelectedIndex()).getDateParamVal();
         String dateStr = sdf.format(selectedDate);
@@ -1102,8 +1103,8 @@ public class LivePlayActivity extends BaseActivity {
         }
         
         if (epgData != null && !epgData.isEmpty()) {
-            String[] epgInfo = EpgUtil.getEpgInfo(channel_Name.getChannelName());
-            getTvLogo(channel_Name.getChannelName(), epgInfo == null ? null : epgInfo[0]);
+            String[] epgInfo = EpgUtil.getEpgInfo(channelName);
+            getTvLogo(channelName, epgInfo == null ? null : epgInfo[0]);
             
             Date now = new Date();
             for (int size = epgData.size() - 1; size >= 0; size--) {
@@ -1126,7 +1127,6 @@ public class LivePlayActivity extends BaseActivity {
                 epgListAdapter.CanBack(currentLiveChannelItem.getinclude_back());
             }
             epgListAdapter.setNewData(epgData);
-            // 同步更新 hsEpg 保持兼容
             String savedEpgKey = channelName + "_" + epgDateAdapter.getItem(epgDateAdapter.getSelectedIndex()).getDatePresented();
             hsEpg.put(savedEpgKey, epgData);
         } else {
@@ -1144,9 +1144,9 @@ public class LivePlayActivity extends BaseActivity {
     }
 
     public void getEpg(Date date) {
-        if (channel_Name == null || channel_Name.getChannelName() == null) return;
+        if (currentLiveChannelItem == null || currentLiveChannelItem.getChannelName() == null) return;
         
-        String channelName = channel_Name.getChannelName();
+        String channelName = currentLiveChannelItem.getChannelName();
         SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
         String dateStr = sdf.format(date);
         
@@ -1177,15 +1177,14 @@ public class LivePlayActivity extends BaseActivity {
         Hawk.put(HawkConfig.LIVE_CHANNEL, currentLiveChannelItem.getChannelName());
         HawkUtils.setLastLiveChannelGroup(liveChannelGroupList.get(currentChannelGroupIndex).getGroupName());
         livePlayerManager.getLiveChannelPlayer(mVideoView, currentLiveChannelItem.getChannelName());
-        channel_Name = currentLiveChannelItem;
         currentLiveChannelItem.setinclude_back(currentLiveChannelItem.getUrl().indexOf("PLTV/8888") != -1);
         mHandler.post(tv_sys_timeRunnable);
-        tv_channelname.setText(channel_Name.getChannelName());
-        tv_channelnum.setText("" + channel_Name.getChannelNum());
-        if (channel_Name == null || channel_Name.getSourceNum() <= 0) {
+        tv_channelname.setText(currentLiveChannelItem.getChannelName());
+        tv_channelnum.setText("" + currentLiveChannelItem.getChannelNum());
+        if (currentLiveChannelItem == null || currentLiveChannelItem.getSourceNum() <= 0) {
             tv_source.setText("1/1");
         } else {
-            tv_source.setText("线路 " + (channel_Name.getSourceIndex() + 1) + "/" + channel_Name.getSourceNum());
+            tv_source.setText("线路 " + (currentLiveChannelItem.getSourceIndex() + 1) + "/" + currentLiveChannelItem.getSourceNum());
         }
 
         getEpg(new Date());
@@ -1225,17 +1224,16 @@ public class LivePlayActivity extends BaseActivity {
             HawkUtils.setLastLiveChannelGroup(liveChannelGroupList.get(currentChannelGroupIndex).getGroupName());
             livePlayerManager.getLiveChannelPlayer(mVideoView, currentLiveChannelItem.getChannelName());
         }
-        channel_Name = currentLiveChannelItem;
         currentLiveChannelItem.setinclude_back(currentLiveChannelItem.getUrl().indexOf("PLTV/8888") != -1);
 
         mHandler.post(tv_sys_timeRunnable);
 
-        tv_channelname.setText(channel_Name.getChannelName());
-        tv_channelnum.setText("" + channel_Name.getChannelNum());
-        if (channel_Name == null || channel_Name.getSourceNum() <= 0) {
+        tv_channelname.setText(currentLiveChannelItem.getChannelName());
+        tv_channelnum.setText("" + currentLiveChannelItem.getChannelNum());
+        if (currentLiveChannelItem == null || currentLiveChannelItem.getSourceNum() <= 0) {
             tv_source.setText("1/1");
         } else {
-            tv_source.setText("线路 " + (channel_Name.getSourceIndex() + 1) + "/" + channel_Name.getSourceNum());
+            tv_source.setText("线路 " + (currentLiveChannelItem.getSourceIndex() + 1) + "/" + currentLiveChannelItem.getSourceNum());
         }
 
         getEpg(new Date());
