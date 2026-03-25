@@ -173,6 +173,11 @@ public class LivePlayActivity extends BaseActivity {
 
     private boolean isSHIYI = false;
     private static String shiyi_time;//时移时间
+    
+    // 回放模式标记，用于区分回放失败和直播失败
+    private boolean isShiyiMode = false;
+    // 回放失败时记录原始URL，用于回退
+    private String shiyiFallbackUrl = null;
 
     private HashMap<String, String> setPlayHeaders(String url) {
         HashMap<String, String> header = new HashMap();
@@ -207,6 +212,39 @@ public class LivePlayActivity extends BaseActivity {
             header.put("User-Agent", "Lavf/59.27.100");
         }
         return header;
+    }
+
+    /**
+     * 构建回放URL
+     * 对于包含 /PLTV/ 的源，先尝试 TVOD 路径
+     * @param originalUrl 原始直播URL
+     * @param shiyiTime 回放时间参数，格式: yyyyMMddHHmmss-yyyyMMddHHmmss
+     * @return 回放URL数组，[0]=首选回放URL，[1]=备选URL（原PLTV路径）
+     */
+    private String[] buildShiyiUrls(String originalUrl, String shiyiTime) {
+        String[] result = new String[2];
+        String shiyiParam = "?playseek=" + shiyiTime;
+        
+        // 检查URL是否已有参数
+        String separator = originalUrl.contains("?") ? "&" : "?";
+        
+        // 备选URL：原URL直接添加参数（默认行为）
+        result[1] = originalUrl + separator + "playseek=" + shiyiTime;
+        
+        // 首选URL：如果包含 /PLTV/，转换为 /TVOD/
+        if (originalUrl.contains("/PLTV/")) {
+            String tvodUrl = originalUrl.replace("/PLTV/", "/TVOD/");
+            if (tvodUrl.contains("?")) {
+                result[0] = tvodUrl + "&playseek=" + shiyiTime;
+            } else {
+                result[0] = tvodUrl + "?playseek=" + shiyiTime;
+            }
+        } else {
+            // 其他源，首选和备选相同
+            result[0] = result[1];
+        }
+        
+        return result;
     }
 
     @Override
@@ -1094,6 +1132,11 @@ public class LivePlayActivity extends BaseActivity {
                         break;
                     case VideoView.STATE_BUFFERED:
                     case VideoView.STATE_PLAYING:
+                        // 播放成功，清除回放失败标记
+                        if (isShiyiMode) {
+                            isShiyiMode = false;
+                            shiyiFallbackUrl = null;
+                        }
                         currentLiveChangeSourceTimes = 0;
                         mHandler.removeCallbacks(mConnectTimeoutChangeSourceRun);
                         mHandler.removeCallbacks(mConnectTimeoutReplayRun);
@@ -1102,6 +1145,32 @@ public class LivePlayActivity extends BaseActivity {
                     case VideoView.STATE_PLAYBACK_COMPLETED:
                         mHandler.removeCallbacks(mConnectTimeoutChangeSourceRun);
                         mHandler.removeCallbacks(mConnectTimeoutReplayRun);
+                        
+                        // 如果是回放模式且失败了
+                        if (isShiyiMode) {
+                            isShiyiMode = false;
+                            
+                            // 如果有备选URL，尝试使用备选URL
+                            if (shiyiFallbackUrl != null && !shiyiFallbackUrl.equals(mVideoView.getUrl())) {
+                                Toast.makeText(App.getInstance(), "回放失败，尝试普通播放", Toast.LENGTH_SHORT).show();
+                                isSHIYI = false;
+                                mVideoView.setUrl(shiyiFallbackUrl, setPlayHeaders(currentLiveChannelItem.getUrl()));
+                                mVideoView.start();
+                                shiyiFallbackUrl = null;
+                                return;
+                            } else {
+                                // 回放完全失败，切换到当前直播
+                                Toast.makeText(App.getInstance(), "该时段无法回放，切换到直播", Toast.LENGTH_LONG).show();
+                                isSHIYI = false;
+                                shiyiFallbackUrl = null;
+                                // 播放当前直播
+                                mVideoView.setUrl(currentLiveChannelItem.getUrl(), setPlayHeaders(currentLiveChannelItem.getUrl()));
+                                mVideoView.start();
+                                return;
+                            }
+                        }
+                        
+                        // 非回放模式，执行原有的超时换源逻辑
                         if (Hawk.get(HawkConfig.LIVE_CONNECT_TIMEOUT, 2) == 0) {
                             mHandler.postDelayed(mConnectTimeoutReplayRun, 30 * 1000L);
                         } else {
@@ -1212,15 +1281,25 @@ public class LivePlayActivity extends BaseActivity {
                     mVideoView.setUrl(currentLiveChannelItem.getUrl(), setPlayHeaders(currentLiveChannelItem.getUrl()));
                     mVideoView.start();
                     epgListAdapter.setShiyiSelection(-1, false, timeFormat.format(date));
-                }
-                if (now.compareTo(selectedData.startdateTime) < 0) {
-
                 } else {
+                    // 历史节目 - 时移回放
                     mVideoView.release();
                     shiyi_time = shiyiStartdate + "-" + shiyiEnddate;
                     isSHIYI = true;
-                    mVideoView.setUrl(currentLiveChannelItem.getUrl() + "?playseek=" + shiyi_time, setPlayHeaders(currentLiveChannelItem.getUrl()));
+                    
+                    // 构建回放URL
+                    String[] shiyiUrls = buildShiyiUrls(currentLiveChannelItem.getUrl(), shiyi_time);
+                    String primaryUrl = shiyiUrls[0];
+                    String fallbackUrl = shiyiUrls[1];
+                    
+                    // 设置回放模式标记
+                    isShiyiMode = true;
+                    shiyiFallbackUrl = fallbackUrl;
+                    
+                    // 先尝试首选URL（TVOD路径）
+                    mVideoView.setUrl(primaryUrl, setPlayHeaders(currentLiveChannelItem.getUrl()));
                     mVideoView.start();
+                    
                     epgListAdapter.setShiyiSelection(position, true, timeFormat.format(date));
                     epgListAdapter.notifyDataSetChanged();
                     mEpgInfoGridView.setSelectedPosition(position);
@@ -1252,15 +1331,25 @@ public class LivePlayActivity extends BaseActivity {
                     mVideoView.setUrl(currentLiveChannelItem.getUrl(), setPlayHeaders(currentLiveChannelItem.getUrl()));
                     mVideoView.start();
                     epgListAdapter.setShiyiSelection(-1, false, timeFormat.format(date));
-                }
-                if (now.compareTo(selectedData.startdateTime) < 0) {
-
                 } else {
+                    // 历史节目 - 时移回放
                     mVideoView.release();
                     shiyi_time = shiyiStartdate + "-" + shiyiEnddate;
                     isSHIYI = true;
-                    mVideoView.setUrl(currentLiveChannelItem.getUrl() + "?playseek=" + shiyi_time, setPlayHeaders(currentLiveChannelItem.getUrl()));
+                    
+                    // 构建回放URL
+                    String[] shiyiUrls = buildShiyiUrls(currentLiveChannelItem.getUrl(), shiyi_time);
+                    String primaryUrl = shiyiUrls[0];
+                    String fallbackUrl = shiyiUrls[1];
+                    
+                    // 设置回放模式标记
+                    isShiyiMode = true;
+                    shiyiFallbackUrl = fallbackUrl;
+                    
+                    // 先尝试首选URL（TVOD路径）
+                    mVideoView.setUrl(primaryUrl, setPlayHeaders(currentLiveChannelItem.getUrl()));
                     mVideoView.start();
+                    
                     epgListAdapter.setShiyiSelection(position, true, timeFormat.format(date));
                     epgListAdapter.notifyDataSetChanged();
                     mEpgInfoGridView.setSelectedPosition(position);
@@ -1618,7 +1707,6 @@ public class LivePlayActivity extends BaseActivity {
                 break;
             case 1://画面比例
                 try {
-                    // 无论有源无源，都调用原方法
                     livePlayerManager.changeLivePlayerScale(mVideoView, position, 
                         currentLiveChannelItem != null ? currentLiveChannelItem.getChannelName() : "");
                     
@@ -1736,7 +1824,6 @@ public class LivePlayActivity extends BaseActivity {
             Toast.makeText(App.getInstance(), getString(R.string.act_live_play_empty_channel), Toast.LENGTH_SHORT).show();
             liveChannelGroupList.clear();
             showSuccess();
-            // 无源时也必须调用 initLiveState 来设置布局初始状态
             initLiveState();
             return;
         }
@@ -1844,7 +1931,6 @@ public class LivePlayActivity extends BaseActivity {
     }
 
     private void initLiveState() {
-        // 设置布局为隐藏状态
         tvLeftChannelListLayout.setVisibility(View.INVISIBLE);
         tvRightSettingLayout.setVisibility(View.INVISIBLE);
         
@@ -1854,7 +1940,6 @@ public class LivePlayActivity extends BaseActivity {
 
         liveChannelGroupAdapter.setNewData(liveChannelGroupList);
         
-        // 如果有源，正常处理
         if (!liveChannelGroupList.isEmpty() && 
             !(liveChannelGroupList.size() == 1 && liveChannelGroupList.get(0).getLiveChannels().isEmpty())) {
             
@@ -1872,7 +1957,6 @@ public class LivePlayActivity extends BaseActivity {
             }
             selectChannelGroup(lastChannelGroupIndex, false, lastLiveChannelIndex);
         } else {
-            // 无源时，显示底部提示
             tv_channelname.setText("无直播源");
             tv_channelnum.setText("");
             tv_source.setText("0/0");
