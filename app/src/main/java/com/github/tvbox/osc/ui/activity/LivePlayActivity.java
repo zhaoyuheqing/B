@@ -903,7 +903,6 @@ public class LivePlayActivity extends BaseActivity {
             });
         }, 5000);
     }
-
     // ==================== 区域6: 生命周期方法 ====================
     // ============================================================
 
@@ -1015,8 +1014,6 @@ public class LivePlayActivity extends BaseActivity {
         });
         mBack.setOnClickListener(v -> finish());
     }
-
-    boolean PiPON = Hawk.get(HawkConfig.BACKGROUND_PLAY_TYPE, 0) == 2;
 
     @Override
     public void onUserLeaveHint() {
@@ -1187,47 +1184,6 @@ public class LivePlayActivity extends BaseActivity {
         }
     }
 
-    private final Runnable mFocusCurrentChannelAndShowChannelList = new Runnable() {
-        @Override
-        public void run() {
-            if (mGroupGridView.isScrolling() || mChannelGridView.isScrolling() || mGroupGridView.isComputingLayout() || mChannelGridView.isComputingLayout()) {
-                mHandler.postDelayed(this, 100);
-            } else {
-                liveChannelGroupAdapter.setSelectedGroupIndex(currentChannelGroupIndex);
-                liveChannelItemAdapter.setSelectedChannelIndex(currentLiveChannelIndex);
-                if (currentLiveChannelIndex >= 0 && currentLiveChannelIndex < mChannelGridView.getAdapter().getItemCount()) {
-                    RecyclerView.ViewHolder holder = mChannelGridView.findViewHolderForAdapterPosition(currentLiveChannelIndex);
-                    if (holder != null) holder.itemView.requestFocus();
-                }
-                tvLeftChannelListLayout.setVisibility(View.VISIBLE);
-                tvLeftChannelListLayout.setAlpha(0.0f);
-                tvLeftChannelListLayout.setTranslationX(-tvLeftChannelListLayout.getWidth() / 2);
-                tvLeftChannelListLayout.animate().translationX(0).alpha(1.0f).setDuration(250)
-                        .setInterpolator(new DecelerateInterpolator()).setListener(null);
-                mHandler.removeCallbacks(mHideChannelListRun);
-                mHandler.postDelayed(mHideChannelListRun, 6000);
-                mHandler.postDelayed(mUpdateLayout, 255);
-            }
-        }
-    };
-
-    private final Runnable mHideChannelListRun = new Runnable() {
-        @Override
-        public void run() {
-            if (tvLeftChannelListLayout.getVisibility() == View.VISIBLE) {
-                tvLeftChannelListLayout.animate().translationX(-tvLeftChannelListLayout.getWidth() / 2).alpha(0.0f)
-                        .setDuration(250).setInterpolator(new DecelerateInterpolator())
-                        .setListener(new AnimatorListenerAdapter() {
-                            @Override
-                            public void onAnimationEnd(Animator animation) {
-                                tvLeftChannelListLayout.setVisibility(View.INVISIBLE);
-                                tvLeftChannelListLayout.clearAnimation();
-                            }
-                        });
-            }
-        }
-    };
-
     public void divLoadEpgR(View view) {
         mGroupGridView.setVisibility(View.GONE);
         mEpgInfoGridView.setVisibility(View.VISIBLE);
@@ -1248,14 +1204,6 @@ public class LivePlayActivity extends BaseActivity {
         showChannelList();
     }
 
-    private final Runnable mUpdateLayout = new Runnable() {
-        @Override
-        public void run() {
-            tvLeftChannelListLayout.requestLayout();
-            tvRightSettingLayout.requestLayout();
-        }
-    };
-
     // ---------- 7.2 频道信息显示/隐藏 ----------
     private void showChannelInfo() {
         if (supportsTouch()) mBack.setVisibility(View.VISIBLE);
@@ -1270,23 +1218,6 @@ public class LivePlayActivity extends BaseActivity {
         mHandler.postDelayed(mHideChannelInfoRun, 6000);
         mHandler.postDelayed(mUpdateLayout, 255);
     }
-
-    private final Runnable mHideChannelInfoRun = new Runnable() {
-        @Override
-        public void run() {
-            mBack.setVisibility(View.INVISIBLE);
-            if (tvBottomLayout.getVisibility() == View.VISIBLE) {
-                tvBottomLayout.animate().alpha(0.0f).setDuration(250).setInterpolator(new DecelerateInterpolator())
-                        .translationY(tvBottomLayout.getHeight() / 2).setListener(new AnimatorListenerAdapter() {
-                            @Override
-                            public void onAnimationEnd(Animator animation) {
-                                tvBottomLayout.setVisibility(View.INVISIBLE);
-                                tvBottomLayout.clearAnimation();
-                            }
-                        });
-            }
-        }
-    };
 
     private void toggleChannelInfo() {
         if (tvLeftChannelListLayout.getVisibility() == View.VISIBLE) {
@@ -1336,20 +1267,6 @@ public class LivePlayActivity extends BaseActivity {
     }
 
     // ---------- 7.4 底部信息栏 ----------
-    private final Runnable tv_sys_timeRunnable = new Runnable() {
-        @Override
-        public void run() {
-            Date date = new Date();
-            tv_sys_time.setText(new SimpleDateFormat("HH:mm:ss", Locale.ENGLISH).format(date));
-            mHandler.postDelayed(this, 1000);
-            if (mVideoView != null && !mIsDragging && mVideoView.getDuration() > 0) {
-                int currentPosition = (int) mVideoView.getCurrentPosition();
-                mCurrentTime.setText(stringForTimeVod(currentPosition));
-                mSeekBar.setProgress(currentPosition);
-            }
-        }
-    };
-
     private void showBottomEpg() {
         if (isShiyiMode) return;
         if (currentLiveChannelItem == null || currentLiveChannelItem.getChannelName() == null) {
@@ -1535,29 +1452,6 @@ public class LivePlayActivity extends BaseActivity {
         playChannel(currentChannelGroupIndex, currentLiveChannelIndex, true);
     }
 
-    // ---------- 8.3 超时处理 ----------
-    private final Runnable mConnectTimeoutChangeSourceRun = new Runnable() {
-        @Override
-        public void run() {
-            if (currentLiveChannelItem == null) return;
-            currentLiveChangeSourceTimes++;
-            if (currentLiveChannelItem.getSourceNum() == currentLiveChangeSourceTimes) {
-                currentLiveChangeSourceTimes = 0;
-                Integer[] groupChannelIndex = getNextChannel(Hawk.get(HawkConfig.LIVE_CHANNEL_REVERSE, false) ? -1 : 1);
-                if (groupChannelIndex[0] >= 0 && groupChannelIndex[1] >= 0) {
-                    playChannel(groupChannelIndex[0], groupChannelIndex[1], false);
-                }
-            } else {
-                playNextSource();
-            }
-        }
-    };
-
-    private final Runnable mConnectTimeoutReplayRun = new Runnable() {
-        @Override
-        public void run() { replayChannel(); }
-    };
-
     // ==================== 区域9: 设置面板方法 ====================
     // ============================================================
 
@@ -1589,43 +1483,6 @@ public class LivePlayActivity extends BaseActivity {
         }
     }
 
-    private final Runnable mFocusAndShowSettingGroup = new Runnable() {
-        @Override
-        public void run() {
-            if (mSettingGroupView.isScrolling() || mSettingItemView.isScrolling() || mSettingGroupView.isComputingLayout() || mSettingItemView.isComputingLayout()) {
-                mHandler.postDelayed(this, 100);
-            } else {
-                RecyclerView.ViewHolder holder = mSettingGroupView.findViewHolderForAdapterPosition(0);
-                if (holder != null) holder.itemView.requestFocus();
-                tvRightSettingLayout.setVisibility(View.VISIBLE);
-                tvRightSettingLayout.setAlpha(0.0f);
-                tvRightSettingLayout.setTranslationX(tvRightSettingLayout.getWidth() / 2);
-                tvRightSettingLayout.animate().translationX(0).alpha(1.0f).setDuration(250)
-                        .setInterpolator(new DecelerateInterpolator()).setListener(null);
-                mHandler.removeCallbacks(mHideSettingLayoutRun);
-                mHandler.postDelayed(mHideSettingLayoutRun, 6000);
-                mHandler.postDelayed(mUpdateLayout, 255);
-            }
-        }
-    };
-
-    private final Runnable mHideSettingLayoutRun = new Runnable() {
-        @Override
-        public void run() {
-            if (tvRightSettingLayout.getVisibility() == View.VISIBLE) {
-                tvRightSettingLayout.animate().translationX(tvRightSettingLayout.getWidth() / 2).alpha(0.0f)
-                        .setDuration(250).setInterpolator(new DecelerateInterpolator())
-                        .setListener(new AnimatorListenerAdapter() {
-                            @Override
-                            public void onAnimationEnd(Animator animation) {
-                                tvRightSettingLayout.setVisibility(View.INVISIBLE);
-                                tvRightSettingLayout.clearAnimation();
-                                liveSettingGroupAdapter.setSelectedGroupIndex(-1);
-                            }
-                        });
-            }
-        }
-    };
     // ---------- 9.2 设置项点击处理 ----------
     private void clickSettingItem(int position) {
         int settingGroupIndex = liveSettingGroupAdapter.getSelectedGroupIndex();
@@ -2076,6 +1933,49 @@ public class LivePlayActivity extends BaseActivity {
         });
     }
 
+    private void selectSettingGroup(int position, boolean focus) {
+        // 修改：只检查需要直播源的功能（线路选择）
+        if (!isCurrentLiveChannelValid() && position == 0) {
+            Toast.makeText(App.getInstance(), "无直播源，无法切换线路", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        
+        if (focus) {
+            liveSettingGroupAdapter.setFocusedGroupIndex(position);
+            liveSettingItemAdapter.setFocusedItemIndex(-1);
+        }
+        if (position == liveSettingGroupAdapter.getSelectedGroupIndex() || position < -1) return;
+        
+        liveSettingGroupAdapter.setSelectedGroupIndex(position);
+        liveSettingItemAdapter.setNewData(liveSettingGroupList.get(position).getLiveSettingItems());
+        switch (position) {
+            case 0:
+                if (currentLiveChannelItem != null) {
+                    liveSettingItemAdapter.selectItem(currentLiveChannelItem.getSourceIndex(), true, false);
+                }
+                break;
+            case 1:
+                try {
+                    liveSettingItemAdapter.selectItem(livePlayerManager.getLivePlayerScale(), true, true);
+                } catch (Exception e) {
+                    liveSettingItemAdapter.selectItem(0, true, true);
+                }
+                break;
+            case 2:
+                try {
+                    liveSettingItemAdapter.selectItem(livePlayerManager.getLivePlayerType(), true, true);
+                } catch (Exception e) {
+                    liveSettingItemAdapter.selectItem(0, true, true);
+                }
+                break;
+        }
+        int scrollToPosition = liveSettingItemAdapter.getSelectedItemIndex();
+        if (scrollToPosition < 0) scrollToPosition = 0;
+        mSettingItemView.scrollToPosition(scrollToPosition);
+        mHandler.removeCallbacks(mHideSettingLayoutRun);
+        mHandler.postDelayed(mHideSettingLayoutRun, 5000);
+    }
+
     // ---------- 10.4 播放器初始化 ----------
     private void initVideoView() {
         controller = new LiveController(this);
@@ -2445,15 +2345,7 @@ public class LivePlayActivity extends BaseActivity {
         }
     }
 
-    private final Runnable mUpdateTimeRun = new Runnable() {
-        @Override
-        public void run() {
-            tvTime.setText(new SimpleDateFormat("HH:mm:ss").format(new Date()));
-            mHandler.postDelayed(this, 1000);
-        }
-    };
-
-    private void showNetSpeed() {
+    void showNetSpeed() {
         if (Hawk.get(HawkConfig.LIVE_SHOW_NET_SPEED, false)) {
             mHandler.post(mUpdateNetSpeedRun);
             tvNetSpeed.setVisibility(View.VISIBLE);
@@ -2463,40 +2355,7 @@ public class LivePlayActivity extends BaseActivity {
         }
     }
 
-    private final Runnable mUpdateNetSpeedRun = new Runnable() {
-        @Override
-        public void run() {
-            if (mVideoView != null) {
-                tvNetSpeed.setText(String.format("%.2fMB/s", (float) mVideoView.getTcpSpeed() / 1024.0 / 1024.0));
-            }
-            mHandler.postDelayed(this, 1000);
-        }
-    };
-
     // ---------- 11.4 数字键换台 ----------
-    private final Runnable mPlaySelectedChannel = new Runnable() {
-        @Override
-        public void run() {
-            tvSelectedChannel.setVisibility(View.GONE);
-            tvSelectedChannel.setText("");
-            int grpIndx = 0, chaIndx = 0, getMin = 1, getMax;
-            for (int j = 0; j < 20; j++) {
-                getMax = getMin + getLiveChannels(j).size() - 1;
-                if (selectedChannelNumber >= getMin && selectedChannelNumber <= getMax) {
-                    grpIndx = j;
-                    chaIndx = selectedChannelNumber - getMin + 1;
-                    break;
-                } else {
-                    getMin = getMax + 1;
-                }
-            }
-            if (selectedChannelNumber > 0) {
-                playChannel(grpIndx, chaIndx - 1, false);
-            }
-            selectedChannelNumber = 0;
-        }
-    };
-
     private void numericKeyDown(int digit) {
         selectedChannelNumber = selectedChannelNumber * 10 + digit;
         tvSelectedChannel.setText(Integer.toString(selectedChannelNumber));
@@ -2537,4 +2396,3 @@ public class LivePlayActivity extends BaseActivity {
             }
         }
     }
-}
