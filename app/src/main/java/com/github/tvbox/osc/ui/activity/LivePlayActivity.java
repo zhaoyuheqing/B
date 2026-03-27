@@ -81,8 +81,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.Hashtable;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -228,7 +230,7 @@ public class LivePlayActivity extends BaseActivity {
                     }
                 }
                 if (matchTo) {
-                    java.util.Iterator<String> keys = headerData.keys();
+                    Iterator<String> keys = headerData.keys();
                     while (keys.hasNext()) {
                         String key = keys.next();
                         String value = headerData.getString(key);
