@@ -26,7 +26,7 @@ import java.util.List;
 
 /**
  * 左侧频道列表面板 - 最终稳定编译版
- * 已修复：OnItemListener 完整实现 + AnimatorListenerAdapter import
+ * 已修复：setFocusedItemIndex 不存在的问题 + OnItemListener 完整实现
  */
 public class LiveChannelListPanel {
 
@@ -175,14 +175,12 @@ public class LiveChannelListPanel {
 
         groupView.setOnItemListener(new TvRecyclerView.OnItemListener() {
             @Override
-            public void onItemPreSelected(TvRecyclerView parent, View itemView, int position) {
-                // 可选预选中处理
-            }
+            public void onItemPreSelected(TvRecyclerView parent, View itemView, int position) {}
 
             @Override
             public void onItemSelected(TvRecyclerView parent, View itemView, int position) {
                 if (groupAdapter != null) groupAdapter.setFocusedGroupIndex(position);
-                if (channelAdapter != null) channelAdapter.setFocusedChannelIndex(-1);
+                if (channelAdapter != null) channelAdapter.setFocusedChannelIndex(-1);   // 使用正确的 focused 方法
             }
 
             @Override
@@ -210,15 +208,13 @@ public class LiveChannelListPanel {
 
         channelView.setOnItemListener(new TvRecyclerView.OnItemListener() {
             @Override
-            public void onItemPreSelected(TvRecyclerView parent, View itemView, int position) {
-                // 可选
-            }
+            public void onItemPreSelected(TvRecyclerView parent, View itemView, int position) {}
 
             @Override
             public void onItemSelected(TvRecyclerView parent, View itemView, int position) {
                 if (position < 0) return;
                 if (groupAdapter != null) groupAdapter.setFocusedGroupIndex(-1);
-                if (channelAdapter != null) channelAdapter.setFocusedItemIndex(position);
+                if (channelAdapter != null) channelAdapter.setFocusedChannelIndex(position);  // 使用正确的 focused 方法
 
                 handler.removeCallbacks(hideRunnable);
                 handler.postDelayed(hideRunnable, LiveConstants.AUTO_HIDE_CHANNEL_LIST_MS);
