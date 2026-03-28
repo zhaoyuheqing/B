@@ -85,19 +85,19 @@ import xyz.doikki.videoplayer.player.VideoView;
 import xyz.doikki.videoplayer.util.PlayerUtils;
 
 /**
- * LivePlayActivity - 重构完成版
+ * LivePlayActivity - 最终完整版
  * 已完成：常量抽取、EPG缓存抽取、设置面板抽取、左侧频道列表抽取
+ * 已修复：确定键切换节目信息、EPG回放显示
  */
 public class LivePlayActivity extends BaseActivity {
 
     // ==================== 区域1: 成员变量声明 ====================
 
-    // ---------- 1.1 核心播放器变量 ----------
+    // 核心播放器
     private VideoView mVideoView;
     private LiveController controller;
 
-    // ---------- 1.2 UI控件变量 ----------
-    // Bottom Channel View
+    // UI控件
     private LinearLayout tvBottomLayout;
     private ImageView tv_logo;
     private TextView tv_sys_time;
@@ -110,14 +110,16 @@ public class LivePlayActivity extends BaseActivity {
     private TextView tv_next_name;
     private TextView tv_next_time;
 
-    // EPG View
+    // EPG视图控件
     private LinearLayout mGroupEPG;
     private LinearLayout mDivLeft;
     private LinearLayout mDivRight;
     private TvRecyclerView mEpgDateGridView;
     private TvRecyclerView mEpgInfoGridView;
+    private TvRecyclerView mGroupGridView;  // 分组列表（频道列表模式）
+    private LinearLayout mDivLeftChannel;   // 左侧分隔线（频道列表模式）
 
-    // Other UI
+    // 其他UI
     private TextView tvSelectedChannel;
     private TextView tvTime;
     private TextView tvNetSpeed;
@@ -127,7 +129,7 @@ public class LivePlayActivity extends BaseActivity {
     private SeekBar mSeekBar;
     private TextView mTotalTime;
 
-    // ---------- 1.3 频道数据变量 ----------
+    // 频道数据
     private final List<LiveChannelGroup> liveChannelGroupList = new ArrayList<>();
     public static int currentChannelGroupIndex = 0;
     private int currentLiveChannelIndex = -1;
@@ -135,11 +137,11 @@ public class LivePlayActivity extends BaseActivity {
     private final ArrayList<Integer> channelGroupPasswordConfirmed = new ArrayList<>();
     private int selectedChannelNumber = 0;
 
-    // ---------- 1.4 播放器管理变量 ----------
+    // 播放器管理
     private final LivePlayerManager livePlayerManager = new LivePlayerManager();
     private int currentLiveChangeSourceTimes = 0;
 
-    // ---------- 1.5 EPG相关变量 ----------
+    // EPG相关
     private LiveEpgDateAdapter epgDateAdapter;
     private LiveEpgAdapter epgListAdapter;
     public String epgStringAddress = "";
@@ -147,20 +149,16 @@ public class LivePlayActivity extends BaseActivity {
     private final Handler mHandler = new Handler();
     private List<Epginfo> epgdata = new ArrayList<>();
 
-    // ---------- 1.6 EPG缓存管理器 ----------
+    // 辅助类
     private EpgCacheHelper epgCacheHelper;
-
-    // ---------- 1.7 设置面板 ----------
     private LiveSettingsPanel settingsPanel;
-
-    // ---------- 1.8 频道列表面板 ----------
     private LiveChannelListPanel channelListPanel;
 
-    // ---------- 1.9 时移/回放相关变量 ----------
+    // 时移/其他
     private boolean isShiyiMode = false;
     private static String shiyi_time;
 
-    // ---------- 1.10 动画Runnable变量 ----------
+    // Runnable
     private final Runnable mHideChannelInfoRun = new Runnable() {
         @Override
         public void run() {
@@ -208,8 +206,7 @@ public class LivePlayActivity extends BaseActivity {
     private final Runnable tv_sys_timeRunnable = new Runnable() {
         @Override
         public void run() {
-            Date date = new Date();
-            tv_sys_time.setText(new SimpleDateFormat(LiveConstants.TIME_FORMAT_HHMMSS, Locale.ENGLISH).format(date));
+            tv_sys_time.setText(new SimpleDateFormat(LiveConstants.TIME_FORMAT_HHMMSS, Locale.ENGLISH).format(new Date()));
             mHandler.postDelayed(this, 1000);
             if (mVideoView != null && !mIsDragging && mVideoView.getDuration() > 0) {
                 int currentPosition = (int) mVideoView.getCurrentPosition();
@@ -236,10 +233,7 @@ public class LivePlayActivity extends BaseActivity {
         }
     };
 
-    private final Runnable mConnectTimeoutReplayRun = new Runnable() {
-        @Override
-        public void run() { replayChannel(); }
-    };
+    private final Runnable mConnectTimeoutReplayRun = this::replayChannel;
 
     private final Runnable mPlaySelectedChannel = new Runnable() {
         @Override
@@ -264,7 +258,6 @@ public class LivePlayActivity extends BaseActivity {
         }
     };
 
-    // ---------- 1.11 其他变量 ----------
     boolean mIsDragging;
     boolean isVOD = false;
     boolean PiPON = Hawk.get(HawkConfig.BACKGROUND_PLAY_TYPE, 0) == 2;
@@ -283,8 +276,7 @@ public class LivePlayActivity extends BaseActivity {
                 JSONArray flags = headerObj.getJSONArray("flag");
                 JSONObject headerData = headerObj.getJSONObject("header");
                 for (int j = 0; j < flags.length(); j++) {
-                    String flag = flags.getString(j);
-                    if (url.contains(flag)) {
+                    if (url.contains(flags.getString(j))) {
                         matchTo = true;
                         break;
                     }
@@ -293,15 +285,12 @@ public class LivePlayActivity extends BaseActivity {
                     Iterator<String> keys = headerData.keys();
                     while (keys.hasNext()) {
                         String key = keys.next();
-                        String value = headerData.getString(key);
-                        header.put(key, value);
+                        header.put(key, headerData.getString(key));
                     }
                     break;
                 }
             }
-            if (!matchTo) {
-                header.put("User-Agent", LiveConstants.DEFAULT_USER_AGENT);
-            }
+            if (!matchTo) header.put("User-Agent", LiveConstants.DEFAULT_USER_AGENT);
         } catch (Exception e) {
             header.put("User-Agent", LiveConstants.DEFAULT_USER_AGENT);
         }
@@ -428,11 +417,14 @@ public class LivePlayActivity extends BaseActivity {
         tv_next_time = findViewById(R.id.tv_next_program_time);
         tv_next_name = findViewById(R.id.tv_next_program_name);
 
+        // EPG视图控件
         mGroupEPG = findViewById(R.id.mGroupEPG);
         mDivRight = findViewById(R.id.mDivRight);
         mDivLeft = findViewById(R.id.mDivLeft);
         mEpgDateGridView = findViewById(R.id.mEpgDateGridView);
         mEpgInfoGridView = findViewById(R.id.mEpgInfoGridView);
+        mGroupGridView = findViewById(R.id.mGroupGridView);
+        mDivLeftChannel = findViewById(R.id.mDivLeft);
 
         // ==================== 初始化设置面板 ====================
         LinearLayout tvRightSettingLayout = findViewById(R.id.tvRightSettingLayout);
@@ -533,11 +525,11 @@ public class LivePlayActivity extends BaseActivity {
 
         // ==================== 初始化频道列表面板 ====================
         LinearLayout tvLeftChannelListLayout = findViewById(R.id.tvLeftChannelListLayout);
-        TvRecyclerView mGroupGridView = findViewById(R.id.mGroupGridView);
+        TvRecyclerView mGroupGridViewForPanel = findViewById(R.id.mGroupGridView);
         TvRecyclerView mChannelGridView = findViewById(R.id.mChannelGridView);
 
         channelListPanel = new LiveChannelListPanel(this, mHandler,
-                tvLeftChannelListLayout, mGroupGridView, mChannelGridView);
+                tvLeftChannelListLayout, mGroupGridViewForPanel, mChannelGridView);
         channelListPanel.setListener(new LiveChannelListPanel.ChannelListListener() {
             @Override
             public void onGroupSelected(int groupIndex) {
@@ -645,7 +637,8 @@ public class LivePlayActivity extends BaseActivity {
                     case KeyEvent.KEYCODE_DPAD_CENTER:
                     case KeyEvent.KEYCODE_ENTER:
                     case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
-                        showChannelList();
+                        // 关键修复：确定键调用 toggleChannelInfo() 而不是 showChannelList()
+                        toggleChannelInfo();
                         break;
                     default:
                         if (keyCode >= KeyEvent.KEYCODE_0 && keyCode <= KeyEvent.KEYCODE_9) {
@@ -717,6 +710,16 @@ public class LivePlayActivity extends BaseActivity {
 
     private void showChannelList() {
         mBack.setVisibility(View.INVISIBLE);
+        
+        // 如果当前在 EPG 视图，先隐藏 EPG 相关控件
+        if (mEpgInfoGridView.getVisibility() == View.VISIBLE) {
+            mEpgInfoGridView.setVisibility(View.GONE);
+            mGroupEPG.setVisibility(View.GONE);
+            mDivLeft.setVisibility(View.GONE);
+            mDivRight.setVisibility(View.VISIBLE);
+            mGroupGridView.setVisibility(View.VISIBLE);
+        }
+        
         if (tvBottomLayout.getVisibility() == View.VISIBLE) {
             mHandler.removeCallbacks(mHideChannelInfoRun);
             mHandler.post(mHideChannelInfoRun);
@@ -732,11 +735,50 @@ public class LivePlayActivity extends BaseActivity {
     }
 
     public void divLoadEpgR(View view) {
-        // 预留，如需 EPG 视图切换可在此实现
+        // 切换到 EPG 视图（节目回放列表）
+        if (channelListPanel != null && channelListPanel.isShowing()) {
+            channelListPanel.hide();
+        }
+        
+        mGroupGridView.setVisibility(View.GONE);
+        mEpgInfoGridView.setVisibility(View.VISIBLE);
+        mGroupEPG.setVisibility(View.VISIBLE);
+        mDivLeft.setVisibility(View.VISIBLE);
+        mDivRight.setVisibility(View.GONE);
+        
+        // 隐藏左侧频道列表容器
+        View leftContainer = findViewById(R.id.tvLeftChannelListLayout);
+        if (leftContainer != null) {
+            leftContainer.setVisibility(View.INVISIBLE);
+        }
+        
+        // 刷新 EPG 数据
+        Date selectedDate = epgDateAdapter.getSelectedIndex() < 0 ? new Date() :
+                epgDateAdapter.getData().get(epgDateAdapter.getSelectedIndex()).getDateParamVal();
+        getEpg(selectedDate);
+        
+        showChannelInfo();
     }
 
     public void divLoadEpgL(View view) {
-        // 预留，如需 EPG 视图切换可在此实现
+        // 切换回频道列表视图
+        if (channelListPanel != null && channelListPanel.isShowing()) {
+            channelListPanel.hide();
+        }
+        
+        mGroupGridView.setVisibility(View.VISIBLE);
+        mEpgInfoGridView.setVisibility(View.GONE);
+        mGroupEPG.setVisibility(View.GONE);
+        mDivLeft.setVisibility(View.GONE);
+        mDivRight.setVisibility(View.VISIBLE);
+        
+        // 隐藏左侧频道列表容器
+        View leftContainer = findViewById(R.id.tvLeftChannelListLayout);
+        if (leftContainer != null) {
+            leftContainer.setVisibility(View.INVISIBLE);
+        }
+        
+        showChannelList();
     }
 
     private void showSettingGroup() {
@@ -753,6 +795,8 @@ public class LivePlayActivity extends BaseActivity {
 
     private void showChannelInfo() {
         if (supportsTouch()) mBack.setVisibility(View.VISIBLE);
+        
+        // 显示底部信息栏
         if (tvBottomLayout.getVisibility() == View.GONE || tvBottomLayout.getVisibility() == View.INVISIBLE) {
             tvBottomLayout.setVisibility(View.VISIBLE);
             tvBottomLayout.setTranslationY(tvBottomLayout.getHeight() / 2);
@@ -760,23 +804,44 @@ public class LivePlayActivity extends BaseActivity {
             tvBottomLayout.animate().alpha(1.0f).setDuration(250).setInterpolator(new DecelerateInterpolator())
                     .translationY(0).setListener(null);
         }
+        
+        // 刷新底部 EPG 信息
+        if (currentLiveChannelItem != null) {
+            Date selectedDate = epgDateAdapter.getSelectedIndex() < 0 ? new Date() :
+                    epgDateAdapter.getData().get(epgDateAdapter.getSelectedIndex()).getDateParamVal();
+            getEpg(selectedDate);
+        }
+        
         mHandler.removeCallbacks(mHideChannelInfoRun);
         mHandler.postDelayed(mHideChannelInfoRun, LiveConstants.AUTO_HIDE_CHANNEL_INFO_MS);
         mHandler.postDelayed(mUpdateLayout, 255);
     }
 
     private void toggleChannelInfo() {
+        // 1. 先处理其他面板
         if (channelListPanel != null && channelListPanel.isShowing()) {
             channelListPanel.hide();
-        } else if (settingsPanel != null && settingsPanel.isShowing()) {
+            return;
+        }
+        if (settingsPanel != null && settingsPanel.isShowing()) {
             settingsPanel.hide();
-        } else if (tvBottomLayout.getVisibility() == View.INVISIBLE) {
+            return;
+        }
+        
+        // 2. 切换底部信息栏显示/隐藏
+        if (tvBottomLayout.getVisibility() == View.INVISIBLE) {
             showChannelInfo();
         } else {
             mBack.setVisibility(View.INVISIBLE);
             mHandler.removeCallbacks(mHideChannelInfoRun);
             mHandler.post(mHideChannelInfoRun);
-            mHandler.post(mUpdateLayout);
+        }
+        
+        // 3. 刷新 EPG 视图（确保数据最新）
+        if (mEpgInfoGridView.getVisibility() == View.VISIBLE && currentLiveChannelItem != null) {
+            Date selectedDate = epgDateAdapter.getSelectedIndex() < 0 ? new Date() :
+                    epgDateAdapter.getData().get(epgDateAdapter.getSelectedIndex()).getDateParamVal();
+            getEpg(selectedDate);
         }
     }
 
@@ -818,7 +883,6 @@ public class LivePlayActivity extends BaseActivity {
             return;
         }
 
-        showChannelInfo();
         String channelName = currentLiveChannelItem.getChannelName();
 
         if (epgdata != null && !epgdata.isEmpty()) {
@@ -996,12 +1060,6 @@ public class LivePlayActivity extends BaseActivity {
         mEpgInfoGridView.setLayoutManager(new V7LinearLayoutManager(this.mContext, 1, false));
         epgListAdapter = new LiveEpgAdapter();
         mEpgInfoGridView.setAdapter(epgListAdapter);
-        mEpgInfoGridView.addOnScrollListener(new RecyclerView.OnScrollListener() {
-            @Override
-            public void onScrollStateChanged(@NonNull RecyclerView recyclerView, int newState) {
-                // 滚动时刷新隐藏计时器由 Panel 处理
-            }
-        });
 
         mEpgInfoGridView.setOnItemListener(new TvRecyclerView.OnItemListener() {
             @Override
