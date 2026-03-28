@@ -14,7 +14,7 @@ public class LiveConstants {
     public static final int PRELOAD_SLEEP_MS = 150;       // 当前频道预加载间隔
     public static final int PRELOAD_OTHER_SLEEP_MS = 100;  // 其他频道预加载间隔
     public static final int PRELOAD_DAYS_BEFORE = 6;       // 预加载往前天数
-    public static final int PRELOAD_DAYS_AFTER = 3;        // 预加载往后天数（总9天）
+    public static final int PRELOAD_DAYS_AFTER = 2;        // 预加载往后天数（总9天）
 
     // UI 自动隐藏延迟
     public static final int AUTO_HIDE_CHANNEL_LIST_MS = 6000;
