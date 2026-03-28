@@ -12,7 +12,6 @@ import android.util.Base64;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
-import android.view.ViewGroup;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -50,6 +49,7 @@ import com.github.tvbox.osc.ui.adapter.LiveSettingGroupAdapter;
 import com.github.tvbox.osc.ui.adapter.LiveSettingItemAdapter;
 import com.github.tvbox.osc.ui.dialog.ApiHistoryDialog;
 import com.github.tvbox.osc.ui.dialog.LivePasswordDialog;
+import com.github.tvbox.osc.util.EpgCacheHelper;
 import com.github.tvbox.osc.util.EpgUtil;
 import com.github.tvbox.osc.util.FastClickCheckUtil;
 import com.github.tvbox.osc.util.HawkConfig;
@@ -59,7 +59,6 @@ import com.github.tvbox.osc.util.live.TxtSubscribe;
 import com.google.gson.JsonArray;
 import com.lzy.okgo.OkGo;
 import com.lzy.okgo.callback.AbsCallback;
-import com.lzy.okgo.callback.StringCallback;
 import com.lzy.okgo.model.Response;
 import com.orhanobut.hawk.Hawk;
 import com.owen.tvrecyclerview.widget.TvRecyclerView;
@@ -84,13 +83,11 @@ import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Hashtable;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import java.util.TimeZone;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -116,7 +113,7 @@ import xyz.doikki.videoplayer.util.PlayerUtils;
  *   - 1.3 频道数据变量
  *   - 1.4 右侧设置面板变量
  *   - 1.5 EPG相关变量
- *   - 1.6 EPG缓存相关变量
+ *   - 1.6 EPG缓存管理器
  *   - 1.7 时移/回放相关变量
  *   - 1.8 动画Runnable变量
  *   - 1.9 其他变量
@@ -125,53 +122,19 @@ import xyz.doikki.videoplayer.util.PlayerUtils;
  *   - 2.1 播放请求头
  *   - 2.2 时移URL构建
  * 
- * 区域3: EPG缓存方法
- *   - 3.1 缓存文件操作
- *   - 3.2 内存缓存操作
- *   - 3.3 文件缓存读写
+ * 区域3: EPG获取和预加载（使用 EpgCacheHelper）
  * 
- * 区域4: EPG网络请求
- *   - 4.1 HTTP客户端
- *   - 4.2 预加载日期
- *   - 4.3 网络请求方法
+ * 区域4: 生命周期方法
  * 
- * 区域5: EPG获取和预加载
- *   - 5.1 EPG获取统一入口
- *   - 5.2 当前频道预加载
- *   - 5.3 其他频道预加载
+ * 区域5: UI显示方法
  * 
- * 区域6: 生命周期方法
- *   - 6.1 init
- *   - 6.2 onResume/onPause/onDestroy
- *   - 6.3 按键事件处理
+ * 区域6: 播放控制方法
  * 
- * 区域7: UI显示方法
- *   - 7.1 频道列表显示/隐藏
- *   - 7.2 频道信息显示/隐藏
- *   - 7.3 EPG显示
- *   - 7.4 底部信息栏
+ * 区域7: 设置面板方法
  * 
- * 区域8: 播放控制方法
- *   - 8.1 频道播放
- *   - 8.2 换台/换源
- *   - 8.3 超时处理
+ * 区域8: 初始化方法
  * 
- * 区域9: 设置面板方法
- *   - 9.1 设置面板显示/隐藏
- *   - 9.2 设置项点击处理
- *   - 9.3 偏好设置
- * 
- * 区域10: 初始化方法
- *   - 10.1 EPG列表初始化
- *   - 10.2 频道列表初始化
- *   - 10.3 设置面板初始化
- *   - 10.4 播放器初始化
- *   - 10.5 数据加载
- * 
- * 区域11: 辅助方法
- *   - 11.1 频道数据获取
- *   - 11.2 密码验证
- *   - 11.3 时间/网速显示
+ * 区域9: 辅助方法
  * 
  * ====================================================
  */
@@ -246,25 +209,11 @@ public class LivePlayActivity extends BaseActivity {
     public String epgStringAddress = "";
     SimpleDateFormat timeFormat = new SimpleDateFormat(LiveConstants.DATE_FORMAT_YMD);
     private final Handler mHandler = new Handler();
-    private static final Hashtable hsEpg = new Hashtable();
+    private static final Hashtable<String, ArrayList<Epginfo>> hsEpg = new Hashtable<>();
     private List<Epginfo> epgdata = new ArrayList<>();
-
-    // ---------- 1.6 EPG缓存相关变量 ----------
-    private static final String EPG_CACHE_DIR = LiveConstants.EPG_CACHE_DIR;
-    private static final long CACHE_VALID_TIME = LiveConstants.EPG_CACHE_VALID_TIME;
-    private static final int MAX_MEMORY_CACHE_SIZE = LiveConstants.MAX_EPG_MEMORY_CACHE;
-    private ExecutorService highPriorityExecutor;
-    private ExecutorService lowPriorityExecutor;
-    private AtomicLong currentChannelRequestId = new AtomicLong(0);
-    private final Set<String> pendingRequests = new HashSet<>();
-    private final Map<String, ArrayList<Epginfo>> memoryCache = new LinkedHashMap<String, ArrayList<Epginfo>>() {
-        @Override
-        protected boolean removeEldestEntry(Map.Entry<String, ArrayList<Epginfo>> eldest) {
-            return size() > MAX_MEMORY_CACHE_SIZE;
-        }
-    };
-    private final Object cacheLock = new Object();
-    private OkHttpClient httpClient;
+    
+    // ---------- 1.6 EPG缓存管理器 ----------
+    private EpgCacheHelper epgCacheHelper;
 
     // ---------- 1.7 时移/回放相关变量 ----------
     private boolean isShiyiMode = false;
@@ -464,7 +413,7 @@ public class LivePlayActivity extends BaseActivity {
 
     // ---------- 2.1 播放请求头 ----------
     private HashMap<String, String> setPlayHeaders(String url) {
-        HashMap<String, String> header = new HashMap();
+        HashMap<String, String> header = new HashMap<>();
         try {
             boolean matchTo = false;
             JSONArray livePlayHeaders = new JSONArray(ApiConfig.get().getLivePlayHeaders().toString());
@@ -542,370 +491,34 @@ public class LivePlayActivity extends BaseActivity {
         }
     }
 
-    // ==================== 区域3: EPG缓存方法 ====================
+    // ==================== 区域3: EPG获取和预加载 ====================
     // ============================================================
 
-    // ---------- 3.1 缓存文件操作 ----------
-    private File getEpgCacheFile(String channelName, String date) {
-        String fileName = channelName.replaceAll("[^a-zA-Z0-9\\u4e00-\\u9fa5]", "_") + "_" + date + ".json";
-        File dir = new File(getApplicationContext().getFilesDir(), LiveConstants.EPG_CACHE_DIR);
-        if (!dir.exists()) {
-            dir.mkdirs();
-        }
-        return new File(dir, fileName);
-    }
-
-    private String getMemoryCacheKey(String channelName, String date) {
-        return channelName + "_" + date;
-    }
-
-    // ---------- 3.2 内存缓存操作 ----------
-    private ArrayList<Epginfo> getFromMemoryCache(String channelName, String date) {
-        String key = getMemoryCacheKey(channelName, date);
-        synchronized (cacheLock) {
-            return memoryCache.get(key);
-        }
-    }
-
-    private void putToMemoryCache(String channelName, String date, ArrayList<Epginfo> epgList) {
-        if (epgList == null || epgList.isEmpty()) return;
-        String key = getMemoryCacheKey(channelName, date);
-        synchronized (cacheLock) {
-            memoryCache.put(key, epgList);
-        }
-    }
-
-    // ---------- 3.3 文件缓存读写 ----------
-    private ArrayList<Epginfo> getFromFileCache(String channelName, String date) {
-        File cacheFile = getEpgCacheFile(channelName, date);
-        if (!cacheFile.exists() || cacheFile.length() < 50) return null;
-        try {
-            StringBuilder content = new StringBuilder();
-            try (FileReader reader = new FileReader(cacheFile)) {
-                char[] buffer = new char[4096];
-                int len;
-                while ((len = reader.read(buffer)) != -1) {
-                    content.append(buffer, 0, len);
-                }
-            }
-            JSONObject cacheData = new JSONObject(content.toString());
-            long timestamp = cacheData.optLong("timestamp", 0);
-            if (System.currentTimeMillis() - timestamp > LiveConstants.EPG_CACHE_VALID_TIME) {
-                cacheFile.delete();
-                return null;
-            }
-            String logoUrl = cacheData.optString("logoUrl", null);
-            if (logoUrl != null && !logoUrl.isEmpty()) {
-                mHandler.post(() -> getTvLogo(channelName, logoUrl));
-            }
-            JSONArray epgArray = cacheData.optJSONArray("epgList");
-            if (epgArray == null || epgArray.length() == 0) return null;
-            ArrayList<Epginfo> epgList = new ArrayList<>();
-            Date dateObj = parseDate(date);
-            for (int i = 0; i < epgArray.length(); i++) {
-                JSONObject epgObj = epgArray.getJSONObject(i);
-                Epginfo epg = new Epginfo(dateObj, epgObj.optString("title", LiveConstants.NO_PROGRAM), dateObj,
-                        epgObj.optString("start", LiveConstants.DEFAULT_START_TIME), epgObj.optString("end", LiveConstants.DEFAULT_END_TIME), i);
-                epg.originStart = epgObj.optString("originStart", LiveConstants.DEFAULT_START_TIME);
-                epg.originEnd = epgObj.optString("originEnd", LiveConstants.DEFAULT_END_TIME);
-                epgList.add(epg);
-            }
-            return epgList;
-        } catch (Exception e) {
-            cacheFile.delete();
-            return null;
-        }
-    }
-
-    private void saveToFileCache(String channelName, String date, ArrayList<Epginfo> newEpgList, String logoUrl) {
-        if (newEpgList == null || newEpgList.isEmpty()) return;
-        putToMemoryCache(channelName, date, newEpgList);
-        lowPriorityExecutor.execute(() -> {
-            try {
-                ArrayList<Epginfo> existingList = getFromFileCache(channelName, date);
-                Map<String, Epginfo> mergedMap = new LinkedHashMap<>();
-                if (existingList != null) {
-                    for (Epginfo epg : existingList) {
-                        mergedMap.put(epg.start + "_" + epg.end, epg);
-                    }
-                }
-                for (Epginfo epg : newEpgList) {
-                    mergedMap.put(epg.start + "_" + epg.end, epg);
-                }
-                ArrayList<Epginfo> finalList = new ArrayList<>(mergedMap.values());
-                finalList.sort((a, b) -> a.start.compareTo(b.start));
-                if (finalList.size() > LiveConstants.EPG_MAX_ITEMS) {
-                    finalList = new ArrayList<>(finalList.subList(0, LiveConstants.EPG_MAX_ITEMS));
-                }
-                File cacheFile = getEpgCacheFile(channelName, date);
-                File tempFile = new File(cacheFile.getParent(), cacheFile.getName() + ".tmp");
-                JSONObject cacheData = new JSONObject();
-                cacheData.put("channelName", channelName);
-                cacheData.put("date", date);
-                cacheData.put("timestamp", System.currentTimeMillis());
-                cacheData.put("logoUrl", logoUrl != null ? logoUrl : "");
-                JSONArray epgArray = new JSONArray();
-                for (Epginfo epg : finalList) {
-                    JSONObject epgObj = new JSONObject();
-                    epgObj.put("title", epg.title);
-                    epgObj.put("start", epg.start);
-                    epgObj.put("end", epg.end);
-                    epgObj.put("originStart", epg.originStart);
-                    epgObj.put("originEnd", epg.originEnd);
-                    epgArray.put(epgObj);
-                }
-                cacheData.put("epgList", epgArray);
-                try (FileWriter writer = new FileWriter(tempFile)) {
-                    writer.write(cacheData.toString());
-                }
-                tempFile.renameTo(cacheFile);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        });
-    }
-
-    // ==================== 区域4: EPG网络请求 ====================
-    // ============================================================
-
-    // ---------- 4.1 HTTP客户端 ----------
-    private synchronized OkHttpClient getHttpClient() {
-        if (httpClient == null) {
-            httpClient = new OkHttpClient.Builder()
-                    .connectTimeout(10, TimeUnit.SECONDS)
-                    .readTimeout(10, TimeUnit.SECONDS)
-                    .build();
-        }
-        return httpClient;
-    }
-
-    // ---------- 4.2 预加载日期 ----------
-    private List<String> getPreloadDates() {
-        List<String> dates = new ArrayList<>();
-        SimpleDateFormat dateFormat = new SimpleDateFormat(LiveConstants.DATE_FORMAT_YMD);
-        Calendar calendar = Calendar.getInstance();
-        calendar.setTime(new Date());
-        calendar.add(Calendar.DAY_OF_MONTH, -LiveConstants.PRELOAD_DAYS_BEFORE);
-        for (int i = 0; i < LiveConstants.PRELOAD_DAYS_BEFORE + LiveConstants.PRELOAD_DAYS_AFTER + 1; i++) {
-            dates.add(dateFormat.format(calendar.getTime()));
-            calendar.add(Calendar.DAY_OF_MONTH, 1);
-        }
-        return dates;
-    }
-
-    private Date parseDate(String dateStr) {
-        try {
-            return new SimpleDateFormat(LiveConstants.DATE_FORMAT_YMD).parse(dateStr);
-        } catch (Exception e) {
-            return new Date();
-        }
-    }
-
-    private boolean hasValidCache(String channelName, String date) {
-        File cacheFile = getEpgCacheFile(channelName, date);
-        if (!cacheFile.exists() || cacheFile.length() < 100) return false;
-        try {
-            StringBuilder content = new StringBuilder();
-            try (FileReader reader = new FileReader(cacheFile)) {
-                char[] buffer = new char[256];
-                int len = reader.read(buffer);
-                if (len > 0) content.append(buffer, 0, len);
-            }
-            if (content.length() > 0) {
-                JSONObject cacheData = new JSONObject(content.toString());
-                long timestamp = cacheData.optLong("timestamp", 0);
-                return System.currentTimeMillis() - timestamp <= LiveConstants.EPG_CACHE_VALID_TIME;
-            }
-        } catch (Exception e) {
-            cacheFile.delete();
-        }
-        return false;
-    }
-
-    // ---------- 4.3 网络请求方法 ----------
-    private void fetchEpgFromNetwork(String channelName, String dateStr, Date date, long requestId, boolean updateUI) {
-        try {
-            SimpleDateFormat sdf = new SimpleDateFormat(LiveConstants.DATE_FORMAT_YMD);
-            String[] epgInfo = EpgUtil.getEpgInfo(channelName);
-            String epgTagName = channelName;
-            String logoUrl = null;
-            if (epgInfo != null) {
-                if (epgInfo[0] != null) logoUrl = epgInfo[0];
-                if (epgInfo.length > 1 && epgInfo[1] != null && !epgInfo[1].isEmpty()) {
-                    epgTagName = epgInfo[1];
-                }
-            }
-            String epgUrl;
-            if (epgStringAddress.contains("{name}") && epgStringAddress.contains("{date}")) {
-                epgUrl = epgStringAddress.replace("{name}", URLEncoder.encode(epgTagName))
-                        .replace("{date}", sdf.format(date));
-            } else {
-                epgUrl = epgStringAddress + "?ch=" + URLEncoder.encode(epgTagName) + "&date=" + sdf.format(date);
-            }
-            
-            Request request = new Request.Builder().url(epgUrl).build();
-            try (okhttp3.Response response = getHttpClient().newCall(request).execute()) {
-                if (response.isSuccessful()) {
-                    String paramString = response.body().string();
-                    ArrayList<Epginfo> arrayList = new ArrayList<>();
-                    try {
-                        if (paramString.contains("epg_data")) {
-                            JSONObject json = new JSONObject(paramString);
-                            String newLogoUrl = json.optString("logo", null);
-                            if (newLogoUrl != null && !newLogoUrl.isEmpty()) logoUrl = newLogoUrl;
-                            JSONArray jSONArray = json.optJSONArray("epg_data");
-                            if (jSONArray != null) {
-                                int length = Math.min(jSONArray.length(), LiveConstants.EPG_MAX_ITEMS);
-                                for (int b = 0; b < length; b++) {
-                                    JSONObject jSONObject = jSONArray.getJSONObject(b);
-                                    Epginfo epg = new Epginfo(date, jSONObject.optString("title", LiveConstants.NO_PROGRAM),
-                                            date, jSONObject.optString("start", LiveConstants.DEFAULT_START_TIME),
-                                            jSONObject.optString("end", LiveConstants.DEFAULT_END_TIME), b);
-                                    arrayList.add(epg);
-                                }
-                            }
-                        }
-                    } catch (JSONException e) {
-                        e.printStackTrace();
-                    }
-                    if (!arrayList.isEmpty()) {
-                        saveToFileCache(channelName, dateStr, arrayList, logoUrl);
-                        
-                        if (updateUI && requestId == currentChannelRequestId.get() &&
-                            currentLiveChannelItem != null && 
-                            channelName.equals(currentLiveChannelItem.getChannelName())) {
-                            mHandler.post(() -> {
-                                showEpg(date, arrayList);
-                                showBottomEpg();
-                            });
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        } finally {
-            synchronized (pendingRequests) {
-                pendingRequests.remove(channelName + "_" + dateStr);
-            }
-        }
-    }
-
-    // ==================== 区域5: EPG获取和预加载 ====================
-    // ============================================================
-
-    // ---------- 5.1 EPG获取统一入口 ----------
+    /**
+     * EPG获取统一入口（使用 EpgCacheHelper）
+     */
     public void getEpg(Date date) {
         if (currentLiveChannelItem == null || currentLiveChannelItem.getChannelName() == null) return;
         
-        String channelName = currentLiveChannelItem.getChannelName();
-        SimpleDateFormat sdf = new SimpleDateFormat(LiveConstants.DATE_FORMAT_YMD);
-        String dateStr = sdf.format(date);
-        
-        // 1. 内存缓存
-        ArrayList<Epginfo> cached = getFromMemoryCache(channelName, dateStr);
-        if (cached != null && !cached.isEmpty()) {
-            showEpg(date, cached);
-            showBottomEpg();
-            return;
-        }
-        
-        // 2. 文件缓存
-        cached = getFromFileCache(channelName, dateStr);
-        if (cached != null && !cached.isEmpty()) {
-            putToMemoryCache(channelName, dateStr, cached);
-            showEpg(date, cached);
-            showBottomEpg();
-            return;
-        }
-        
-        // 3. 网络请求（异步，不阻塞UI）
-        final long requestId = currentChannelRequestId.incrementAndGet();
-        final String reqChannelName = channelName;
-        final Date reqDate = date;
-        
-        highPriorityExecutor.execute(() -> {
-            fetchEpgFromNetwork(reqChannelName, dateStr, reqDate, requestId, true);
-        });
-    }
-
-    // ---------- 5.2 当前频道预加载 ----------
-    private void preloadCurrentChannelAllDates() {
-        if (currentLiveChannelItem == null) return;
-        
         final String channelName = currentLiveChannelItem.getChannelName();
-        final List<String> dates = getPreloadDates();
-        
-        // 整个循环在高优先级线程池中执行，不阻塞UI
-        highPriorityExecutor.execute(() -> {
-            for (String date : dates) {
-                String taskKey = channelName + "_" + date;
-                synchronized (pendingRequests) {
-                    if (pendingRequests.contains(taskKey)) continue;
-                    pendingRequests.add(taskKey);
+        epgCacheHelper.requestEpg(channelName, date, new EpgCacheHelper.EpgCallback() {
+            @Override
+            public void onSuccess(String channelName, Date date, ArrayList<Epginfo> epgList) {
+                // 确保还是当前频道
+                if (currentLiveChannelItem != null && channelName.equals(currentLiveChannelItem.getChannelName())) {
+                    showEpg(date, epgList);
+                    showBottomEpg();
                 }
-                
-                try {
-                    SimpleDateFormat sdf = new SimpleDateFormat(LiveConstants.DATE_FORMAT_YMD);
-                    Date dateObj = sdf.parse(date);
-                    fetchEpgFromNetwork(channelName, date, dateObj, 0, false);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                } finally {
-                    synchronized (pendingRequests) {
-                        pendingRequests.remove(taskKey);
-                    }
-                }
-                
-                try { Thread.sleep(LiveConstants.PRELOAD_SLEEP_MS); } catch (InterruptedException e) { break; }
+            }
+            
+            @Override
+            public void onFailure(String channelName, Date date, Exception e) {
+                // 静默失败
             }
         });
     }
 
-    // ---------- 5.3 其他频道预加载 ----------
-    private void backgroundPreloadOtherChannels() {
-        if (currentLiveChannelItem == null) return;
-        
-        final List<LiveChannelItem> allChannels = getLiveChannels(currentChannelGroupIndex);
-        if (allChannels == null || allChannels.isEmpty()) return;
-        
-        final String currentName = currentLiveChannelItem.getChannelName();
-        final List<String> dates = getPreloadDates();
-        
-        // 延迟5秒后，在低优先级线程池中执行整个循环，不阻塞UI
-        mHandler.postDelayed(() -> {
-            lowPriorityExecutor.execute(() -> {
-                for (LiveChannelItem channel : allChannels) {
-                    String channelName = channel.getChannelName();
-                    if (channelName.equals(currentName)) continue;
-                    
-                    for (String date : dates) {
-                        String taskKey = channelName + "_" + date;
-                        synchronized (pendingRequests) {
-                            if (pendingRequests.contains(taskKey)) continue;
-                            pendingRequests.add(taskKey);
-                        }
-                        
-                        try {
-                            SimpleDateFormat sdf = new SimpleDateFormat(LiveConstants.DATE_FORMAT_YMD);
-                            Date dateObj = sdf.parse(date);
-                            fetchEpgFromNetwork(channelName, date, dateObj, 0, false);
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                        } finally {
-                            synchronized (pendingRequests) {
-                                pendingRequests.remove(taskKey);
-                            }
-                        }
-                        
-                        try { Thread.sleep(LiveConstants.PRELOAD_OTHER_SLEEP_MS); } catch (InterruptedException e) { break; }
-                    }
-                }
-            });
-        }, LiveConstants.PRELOAD_DELAY_MS);
-    }
-
-    // ==================== 区域6: 生命周期方法 ====================
+    // ==================== 区域4: 生命周期方法 ====================
     // ============================================================
 
     @Override
@@ -915,16 +528,15 @@ public class LivePlayActivity extends BaseActivity {
 
     @Override
     protected void init() {
-        // 初始化线程池
-        highPriorityExecutor = Executors.newFixedThreadPool(LiveConstants.HIGH_PRIORITY_THREADS);
-        lowPriorityExecutor = Executors.newFixedThreadPool(LiveConstants.LOW_PRIORITY_THREADS);
-        
         hideSystemUI(false);
 
         epgStringAddress = Hawk.get(HawkConfig.EPG_URL, "");
         if (StringUtils.isBlank(epgStringAddress)) {
             epgStringAddress = LiveConstants.DEFAULT_EPG_URL;
         }
+        
+        // 初始化 EPG 缓存管理器
+        epgCacheHelper = new EpgCacheHelper(this, epgStringAddress);
 
         EventBus.getDefault().register(this);
         setLoadSir(findViewById(R.id.live_root));
@@ -1141,26 +753,17 @@ public class LivePlayActivity extends BaseActivity {
             mVideoView = null;
         }
         
-        if (highPriorityExecutor != null && !highPriorityExecutor.isShutdown()) {
-            highPriorityExecutor.shutdownNow();
-        }
-        if (lowPriorityExecutor != null && !lowPriorityExecutor.isShutdown()) {
-            lowPriorityExecutor.shutdownNow();
+        if (epgCacheHelper != null) {
+            epgCacheHelper.destroy();
         }
         
-        synchronized (cacheLock) {
-            memoryCache.clear();
-        }
         hsEpg.clear();
-        synchronized (pendingRequests) {
-            pendingRequests.clear();
-        }
     }
 
-    // ==================== 区域7: UI显示方法 ====================
+    // ==================== 区域5: UI显示方法 ====================
     // ============================================================
 
-    // ---------- 7.1 频道列表显示/隐藏 ----------
+    // ---------- 5.1 频道列表显示/隐藏 ----------
     private void showChannelList() {
         mBack.setVisibility(View.INVISIBLE);
         if (tvBottomLayout.getVisibility() == View.VISIBLE) {
@@ -1206,7 +809,7 @@ public class LivePlayActivity extends BaseActivity {
         showChannelList();
     }
 
-    // ---------- 7.2 频道信息显示/隐藏 ----------
+    // ---------- 5.2 频道信息显示/隐藏 ----------
     private void showChannelInfo() {
         if (supportsTouch()) mBack.setVisibility(View.VISIBLE);
         if (tvBottomLayout.getVisibility() == View.GONE || tvBottomLayout.getVisibility() == View.INVISIBLE) {
@@ -1238,7 +841,7 @@ public class LivePlayActivity extends BaseActivity {
         }
     }
 
-    // ---------- 7.3 EPG显示 ----------
+    // ---------- 5.3 EPG显示 ----------
     private void showEpg(Date date, ArrayList<Epginfo> arrayList) {
         if (arrayList != null && arrayList.size() > 0) {
             epgdata = arrayList;
@@ -1268,7 +871,7 @@ public class LivePlayActivity extends BaseActivity {
         }
     }
 
-    // ---------- 7.4 底部信息栏 ----------
+    // ---------- 5.4 底部信息栏 ----------
     private void showBottomEpg() {
         if (isShiyiMode) return;
         if (currentLiveChannelItem == null || currentLiveChannelItem.getChannelName() == null) {
@@ -1279,30 +882,20 @@ public class LivePlayActivity extends BaseActivity {
         
         showChannelInfo();
         String channelName = currentLiveChannelItem.getChannelName();
-        SimpleDateFormat sdf = new SimpleDateFormat(LiveConstants.DATE_FORMAT_YMD);
-        Date selectedDate = epgDateAdapter.getData().get(epgDateAdapter.getSelectedIndex()).getDateParamVal();
-        String dateStr = sdf.format(selectedDate);
         
-        ArrayList<Epginfo> epgData = getFromMemoryCache(channelName, dateStr);
-        if (epgData == null) {
-            epgData = getFromFileCache(channelName, dateStr);
-            if (epgData != null) {
-                putToMemoryCache(channelName, dateStr, epgData);
-            }
-        }
-        
-        if (epgData != null && !epgData.isEmpty()) {
+        // 使用已缓存的 epgdata（由 showEpg 填充）
+        if (epgdata != null && !epgdata.isEmpty()) {
             String[] epgInfo = EpgUtil.getEpgInfo(channelName);
             getTvLogo(channelName, epgInfo == null ? null : epgInfo[0]);
             
             Date now = new Date();
-            for (int size = epgData.size() - 1; size >= 0; size--) {
-                Epginfo epg = epgData.get(size);
+            for (int size = epgdata.size() - 1; size >= 0; size--) {
+                Epginfo epg = epgdata.get(size);
                 if (now.after(epg.startdateTime) && now.before(epg.enddateTime)) {
                     tv_curr_time.setText(epg.start + " - " + epg.end);
                     tv_curr_name.setText(epg.title);
-                    if (size != epgData.size() - 1) {
-                        Epginfo next = epgData.get(size + 1);
+                    if (size != epgdata.size() - 1) {
+                        Epginfo next = epgdata.get(size + 1);
                         tv_next_time.setText(next.start + " - " + next.end);
                         tv_next_name.setText(next.title);
                     } else {
@@ -1315,9 +908,9 @@ public class LivePlayActivity extends BaseActivity {
             if (currentLiveChannelItem != null) {
                 epgListAdapter.CanBack(currentLiveChannelItem.getinclude_back());
             }
-            epgListAdapter.setNewData(epgData);
+            epgListAdapter.setNewData(epgdata);
             String savedEpgKey = channelName + "_" + epgDateAdapter.getItem(epgDateAdapter.getSelectedIndex()).getDatePresented();
-            hsEpg.put(savedEpgKey, epgData);
+            hsEpg.put(savedEpgKey, epgdata);
         } else {
             tv_curr_name.setText(LiveConstants.NO_PROGRAM);
             tv_next_name.setText("");
@@ -1330,10 +923,10 @@ public class LivePlayActivity extends BaseActivity {
         Glide.with(App.getInstance()).load(logoUrl).apply(options).into(tv_logo);
     }
 
-    // ==================== 区域8: 播放控制方法 ====================
+    // ==================== 区域6: 播放控制方法 ====================
     // ============================================================
 
-    // ---------- 8.1 频道播放 ----------
+    // ---------- 6.1 频道播放 ----------
     private boolean playChannel(int channelGroupIndex, int liveChannelIndex, boolean changeSource) {
         if (channelGroupIndex >= liveChannelGroupList.size()) {
             Toast.makeText(App.getInstance(), "分组不存在", Toast.LENGTH_SHORT).show();
@@ -1378,8 +971,10 @@ public class LivePlayActivity extends BaseActivity {
         getEpg(new Date());
         showBottomEpg();
         
-        // 预加载当前频道的所有日期（高优先级）
-        preloadCurrentChannelAllDates();
+        // 预加载当前频道的所有日期
+        if (epgCacheHelper != null && currentLiveChannelItem != null) {
+            epgCacheHelper.preloadCurrentChannel(currentLiveChannelItem.getChannelName());
+        }
         
         mVideoView.setUrl(currentLiveChannelItem.getUrl(), setPlayHeaders(currentLiveChannelItem.getUrl()));
         showChannelInfo();
@@ -1412,7 +1007,7 @@ public class LivePlayActivity extends BaseActivity {
         return true;
     }
 
-    // ---------- 8.2 换台/换源 ----------
+    // ---------- 6.2 换台/换源 ----------
     private void playNext() {
         if (!isCurrentLiveChannelValid()) {
             Toast.makeText(App.getInstance(), "暂无直播源", Toast.LENGTH_SHORT).show();
@@ -1454,10 +1049,10 @@ public class LivePlayActivity extends BaseActivity {
         playChannel(currentChannelGroupIndex, currentLiveChannelIndex, true);
     }
 
-    // ==================== 区域9: 设置面板方法 ====================
+    // ==================== 区域7: 设置面板方法 ====================
     // ============================================================
 
-    // ---------- 9.1 设置面板显示/隐藏 ----------
+    // ---------- 7.1 设置面板显示/隐藏 ----------
     private void showSettingGroup() {
         mBack.setVisibility(View.INVISIBLE);
         if (tvLeftChannelListLayout.getVisibility() == View.VISIBLE) {
@@ -1485,11 +1080,10 @@ public class LivePlayActivity extends BaseActivity {
         }
     }
 
-    // ---------- 9.2 设置项点击处理 ----------
+    // ---------- 7.2 设置项点击处理 ----------
     private void clickSettingItem(int position) {
         int settingGroupIndex = liveSettingGroupAdapter.getSelectedGroupIndex();
         
-        // 线路选择需要特殊处理
         if (settingGroupIndex == 0 && !isCurrentLiveChannelValid()) {
             Toast.makeText(App.getInstance(), "当前无直播源，无法切换线路", Toast.LENGTH_SHORT).show();
             return;
@@ -1600,10 +1194,10 @@ public class LivePlayActivity extends BaseActivity {
         mHandler.postDelayed(mHideSettingLayoutRun, LiveConstants.AUTO_HIDE_SETTINGS_MS);
     }
 
-    // ==================== 区域10: 初始化方法 ====================
+    // ==================== 区域8: 初始化方法 ====================
     // ============================================================
 
-    // ---------- 10.1 EPG列表初始化 ----------
+    // ---------- 8.1 EPG列表初始化 ----------
     private void initEpgListView() {
         mEpgInfoGridView.setHasFixedSize(true);
         mEpgInfoGridView.setLayoutManager(new V7LinearLayoutManager(this.mContext, 1, false));
@@ -1771,7 +1365,7 @@ public class LivePlayActivity extends BaseActivity {
         epgDateAdapter.setSelectedIndex(1);
     }
 
-    // ---------- 10.2 频道列表初始化 ----------
+    // ---------- 8.2 频道列表初始化 ----------
     private void initChannelGroupView() {
         mGroupGridView.setHasFixedSize(true);
         mGroupGridView.setLayoutManager(new V7LinearLayoutManager(this.mContext, 1, false));
@@ -1872,7 +1466,7 @@ public class LivePlayActivity extends BaseActivity {
         playChannel(liveChannelGroupAdapter.getSelectedGroupIndex(), position, false);
     }
 
-    // ---------- 10.3 设置面板初始化 ----------
+    // ---------- 8.3 设置面板初始化 ----------
     private void initSettingGroupView() {
         mSettingGroupView.setHasFixedSize(true);
         mSettingGroupView.setLayoutManager(new V7LinearLayoutManager(this.mContext, 1, false));
@@ -1936,7 +1530,6 @@ public class LivePlayActivity extends BaseActivity {
     }
 
     private void selectSettingGroup(int position, boolean focus) {
-        // 修改：只检查需要直播源的功能（线路选择）
         if (!isCurrentLiveChannelValid() && position == 0) {
             Toast.makeText(App.getInstance(), "无直播源，无法切换线路", Toast.LENGTH_SHORT).show();
             return;
@@ -1978,7 +1571,7 @@ public class LivePlayActivity extends BaseActivity {
         mHandler.postDelayed(mHideSettingLayoutRun, LiveConstants.AUTO_HIDE_SETTINGS_MS);
     }
 
-    // ---------- 10.4 播放器初始化 ----------
+    // ---------- 8.4 播放器初始化 ----------
     private void initVideoView() {
         controller = new LiveController(this);
         controller.setListener(new LiveController.LiveControlListener() {
@@ -2057,7 +1650,7 @@ public class LivePlayActivity extends BaseActivity {
         mVideoView.setProgressManager(null);
     }
 
-    // ---------- 10.5 数据加载 ----------
+    // ---------- 8.5 数据加载 ----------
     private void initLiveChannelList() {
         List<LiveChannelGroup> list = ApiConfig.get().getChannelGroupList();
         if (list.isEmpty()) {
@@ -2139,7 +1732,6 @@ public class LivePlayActivity extends BaseActivity {
     }
 
     private void initLiveState() {
-        // 始终初始化UI组件（即使无源）
         tvLeftChannelListLayout.setVisibility(View.INVISIBLE);
         tvRightSettingLayout.setVisibility(View.INVISIBLE);
         
@@ -2150,16 +1742,13 @@ public class LivePlayActivity extends BaseActivity {
         
         if (liveChannelGroupList.isEmpty() || 
             (liveChannelGroupList.size() == 1 && liveChannelGroupList.get(0).getLiveChannels().isEmpty())) {
-            // 无源时显示提示信息
             tv_channelname.setText("无直播源");
             tv_channelnum.setText("");
             tv_source.setText("0/0");
             tv_size.setText("");
             tv_curr_name.setText("请先添加直播源");
             tv_next_name.setText("");
-            // 不返回，继续执行后续初始化，让设置面板可用
         } else {
-            // 有源时的正常播放逻辑
             int lastChannelGroupIndex = -1;
             int lastLiveChannelIndex = -1;
             Intent intent = getIntent();
@@ -2173,8 +1762,19 @@ public class LivePlayActivity extends BaseActivity {
                 lastLiveChannelIndex = lastChannel.getSecond();
             }
             selectChannelGroup(lastChannelGroupIndex, false, lastLiveChannelIndex);
-            // 延迟启动其他频道预加载
-            backgroundPreloadOtherChannels();
+            
+            if (epgCacheHelper != null && currentLiveChannelItem != null) {
+                List<String> allChannelNames = new ArrayList<>();
+                for (LiveChannelGroup group : liveChannelGroupList) {
+                    for (LiveChannelItem channel : group.getLiveChannels()) {
+                        allChannelNames.add(channel.getChannelName());
+                    }
+                }
+                final String currentName = currentLiveChannelItem.getChannelName();
+                mHandler.postDelayed(() -> {
+                    epgCacheHelper.preloadOtherChannels(allChannelNames, currentName);
+                }, LiveConstants.PRELOAD_DELAY_MS);
+            }
         }
     }
 
@@ -2232,10 +1832,10 @@ public class LivePlayActivity extends BaseActivity {
         liveSettingGroupList.get(0).setLiveSettingItems(liveSettingItemList);
     }
 
-    // ==================== 区域11: 辅助方法 ====================
+    // ==================== 区域9: 辅助方法 ====================
     // ============================================================
 
-    // ---------- 11.1 频道数据获取 ----------
+    // ---------- 9.1 频道数据获取 ----------
     private ArrayList<LiveChannelItem> getLiveChannels(int groupIndex) {
         if (groupIndex >= liveChannelGroupList.size()) return new ArrayList<>();
         if (!isNeedInputPassword(groupIndex)) {
@@ -2278,7 +1878,7 @@ public class LivePlayActivity extends BaseActivity {
         return new Integer[]{channelGroupIndex, liveChannelIndex};
     }
 
-    // ---------- 11.2 密码验证 ----------
+    // ---------- 9.2 密码验证 ----------
     private boolean isNeedInputPassword(int groupIndex) {
         if (groupIndex >= liveChannelGroupList.size()) return false;
         return !liveChannelGroupList.get(groupIndex).getGroupPassword().isEmpty() && !isPasswordConfirmed(groupIndex);
@@ -2336,7 +1936,7 @@ public class LivePlayActivity extends BaseActivity {
         }
     }
 
-    // ---------- 11.3 时间/网速显示 ----------
+    // ---------- 9.3 时间/网速显示 ----------
     void showTime() {
         if (Hawk.get(HawkConfig.LIVE_SHOW_TIME, false)) {
             mHandler.post(mUpdateTimeRun);
@@ -2357,7 +1957,7 @@ public class LivePlayActivity extends BaseActivity {
         }
     }
 
-    // ---------- 11.4 数字键换台 ----------
+    // ---------- 9.4 数字键换台 ----------
     private void numericKeyDown(int digit) {
         selectedChannelNumber = selectedChannelNumber * 10 + digit;
         tvSelectedChannel.setText(Integer.toString(selectedChannelNumber));
@@ -2366,7 +1966,7 @@ public class LivePlayActivity extends BaseActivity {
         mHandler.postDelayed(mPlaySelectedChannel, LiveConstants.NUMERIC_TIMEOUT_MS);
     }
 
-    // ---------- 11.5 其他辅助 ----------
+    // ---------- 9.5 其他辅助 ----------
     private boolean isListOrSettingLayoutVisible() {
         return tvLeftChannelListLayout.getVisibility() == View.VISIBLE || tvRightSettingLayout.getVisibility() == View.VISIBLE;
     }
