@@ -90,7 +90,7 @@ import xyz.doikki.videoplayer.util.PlayerUtils;
  * - 左侧列表高亮始终跟随当前播放频道
  * - EPG 回放时正确显示完整大面板
  * - 时移回放正常播放，不会跳直播
- * - 视图切换动画平滑，无冲突
+ * - 视图切换平滑，无冲突
  */
 public class LivePlayActivity extends BaseActivity {
 
@@ -497,6 +497,10 @@ public class LivePlayActivity extends BaseActivity {
         channelListPanel.setListener(new LiveChannelListPanel.ChannelListListener() {
             @Override
             public void onGroupSelected(int groupIndex) {
+                // 如果当前是 EPG 模式，先切换回频道模式
+                if (channelListPanel != null && channelListPanel.isEpgMode()) {
+                    channelListPanel.showChannelMode();
+                }
                 handleGroupSelected(groupIndex);
             }
 
@@ -758,8 +762,8 @@ public class LivePlayActivity extends BaseActivity {
 
     public void divLoadEpgR(View view) {
         if (settingsPanel != null && settingsPanel.isShowing()) settingsPanel.hide();
-        if (channelListPanel != null && channelListPanel.isShowing()) channelListPanel.hide();
-        channelListPanel.showEpgMode();
+        // 关键修复：直接进入 EPG 模式，不再先隐藏面板
+        if (channelListPanel != null) channelListPanel.showEpgMode();
     }
 
     public void divLoadEpgL(View view) {
