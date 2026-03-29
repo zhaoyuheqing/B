@@ -88,8 +88,8 @@ import xyz.doikki.videoplayer.util.PlayerUtils;
  * LivePlayActivity - 最终稳定版
  * 已彻底解决：
  * - 左侧列表高亮始终跟随当前播放频道
- * - EPG 回放时正确显示完整大面板
- * - 时移回放正常播放，不会跳直播
+ * - EPG 回放时正确显示完整大面板（默认选中今天）
+ * - 时移回放正常播放，不会跳直播（清除超时换源）
  * - 视图切换平滑，无冲突
  */
 public class LivePlayActivity extends BaseActivity {
@@ -500,7 +500,6 @@ public class LivePlayActivity extends BaseActivity {
                 // 如果当前是 EPG 模式，先切换回频道模式
                 if (channelListPanel != null && channelListPanel.isEpgMode()) {
                     channelListPanel.showChannelMode();
-                    // 延迟执行分组切换，确保视图切换完成
                     mHandler.postDelayed(() -> handleGroupSelected(groupIndex), 100);
                 } else {
                     handleGroupSelected(groupIndex);
@@ -514,6 +513,10 @@ public class LivePlayActivity extends BaseActivity {
 
             @Override
             public void onEpgModeRequest() {
+                // 强制选中今天（索引6）
+                epgDateAdapter.setSelectedIndex(6);
+                Date selectedDate = epgDateAdapter.getData().get(6).getDateParamVal();
+
                 View groupGridView = findViewById(R.id.mGroupGridView);
                 if (groupGridView != null) groupGridView.setVisibility(View.GONE);
 
@@ -531,8 +534,6 @@ public class LivePlayActivity extends BaseActivity {
                 mGroupEPG.bringToFront();
 
                 if (currentLiveChannelItem != null) {
-                    Date selectedDate = epgDateAdapter.getSelectedIndex() < 0 ? new Date() :
-                            epgDateAdapter.getData().get(epgDateAdapter.getSelectedIndex()).getDateParamVal();
                     getEpg(selectedDate);
                 }
 
@@ -759,12 +760,9 @@ public class LivePlayActivity extends BaseActivity {
                 channelListPanel.show();
                 mHandler.post(tv_sys_timeRunnable);
             } else {
-                // 面板已显示：根据模式决定行为
                 if (channelListPanel.isEpgMode()) {
-                    // EPG 模式：切换回频道模式（不隐藏面板）
                     channelListPanel.showChannelMode();
                 } else {
-                    // 频道模式：隐藏面板
                     channelListPanel.hide();
                     mHandler.removeCallbacks(tv_sys_timeRunnable);
                 }
@@ -774,7 +772,6 @@ public class LivePlayActivity extends BaseActivity {
 
     public void divLoadEpgR(View view) {
         if (settingsPanel != null && settingsPanel.isShowing()) settingsPanel.hide();
-        // 直接进入 EPG 模式，不再先隐藏面板
         if (channelListPanel != null) channelListPanel.showEpgMode();
     }
 
@@ -1090,6 +1087,10 @@ public class LivePlayActivity extends BaseActivity {
                 Toast.makeText(this, "无效的回放时间", Toast.LENGTH_SHORT).show();
                 return;
             }
+            // 关键：停止超时换源，避免播放错误后跳台
+            mHandler.removeCallbacks(mConnectTimeoutChangeSourceRun);
+            mHandler.removeCallbacks(mConnectTimeoutReplayRun);
+
             mVideoView.release();
             shiyi_time = shiyiStartdate + "-" + shiyiEnddate;
             isShiyiMode = true;
@@ -1102,7 +1103,7 @@ public class LivePlayActivity extends BaseActivity {
             epgListAdapter.notifyDataSetChanged();
             mEpgInfoGridView.setSelectedPosition(position);
 
-            // 延迟调用确保播放器已启动，避免时序冲突
+            // 延迟调用确保播放器已启动
             mHandler.postDelayed(() -> {
                 if (channelListPanel != null) channelListPanel.showEpgMode();
             }, 100);
@@ -1151,7 +1152,8 @@ public class LivePlayActivity extends BaseActivity {
             epgDateAdapter.setSelectedIndex(position);
             getEpg(epgDateAdapter.getData().get(position).getDateParamVal());
         });
-        epgDateAdapter.setSelectedIndex(1);
+        // 关键修复：默认选中今天（索引6）
+        epgDateAdapter.setSelectedIndex(6);
     }
 
     private void initVideoView() {
@@ -1442,7 +1444,6 @@ public class LivePlayActivity extends BaseActivity {
     private void switchToGroup(int groupIndex) {
         if (groupIndex >= liveChannelGroupList.size()) return;
 
-        // 注意：不修改 currentChannelGroupIndex 和 currentLiveChannelIndex，只更新列表显示
         if (channelListPanel != null) {
             channelListPanel.loadGroup(groupIndex, liveChannelGroupList);
         }
