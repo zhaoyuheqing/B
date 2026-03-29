@@ -85,12 +85,12 @@ import xyz.doikki.videoplayer.player.VideoView;
 import xyz.doikki.videoplayer.util.PlayerUtils;
 
 /**
- * LivePlayActivity - 最终解耦版
+ * LivePlayActivity - 最终稳定版
  * 已彻底解决：
- * 1. 左侧列表高亮始终跟随当前播放频道
- * 2. EPG 回放点击时正确弹出完整大面板
- * 3. 时移回放正常播放（不再跳直播）
- * 4. 视图切换逻辑与原始脚本一致，无冲突
+ * - 左侧列表高亮始终跟随当前播放频道
+ * - EPG 回放时正确显示完整大面板
+ * - 时移回放正常播放，不会跳直播
+ * - 视图切换动画平滑，无冲突
  */
 public class LivePlayActivity extends BaseActivity {
 
@@ -364,7 +364,6 @@ public class LivePlayActivity extends BaseActivity {
         setLoadSir(findViewById(R.id.live_root));
         mVideoView = findViewById(R.id.mVideoView);
 
-        // findViewById（保持你原来的所有 find，此处仅列举关键部分）
         tvSelectedChannel = findViewById(R.id.tv_selected_channel);
         tv_size = findViewById(R.id.tv_size);
         tv_source = findViewById(R.id.tv_source);
@@ -473,6 +472,7 @@ public class LivePlayActivity extends BaseActivity {
                         }
                         dialog.dismiss();
                     }
+
                     @Override
                     public void del(String value, ArrayList<String> data) {
                         Hawk.put(HawkConfig.LIVE_HISTORY, data);
@@ -507,7 +507,6 @@ public class LivePlayActivity extends BaseActivity {
 
             @Override
             public void onEpgModeRequest() {
-                // 切换到 EPG 模式（显示节目列表，隐藏分组列表）
                 View groupGridView = findViewById(R.id.mGroupGridView);
                 if (groupGridView != null) groupGridView.setVisibility(View.GONE);
 
@@ -516,26 +515,25 @@ public class LivePlayActivity extends BaseActivity {
                 mDivLeft.setVisibility(View.VISIBLE);
                 mDivRight.setVisibility(View.GONE);
 
+                mEpgInfoGridView.setAlpha(0f);
+                mGroupEPG.setAlpha(0f);
+                mEpgInfoGridView.animate().alpha(1f).setDuration(250).start();
+                mGroupEPG.animate().alpha(1f).setDuration(250).start();
+
                 mEpgInfoGridView.bringToFront();
                 mGroupEPG.bringToFront();
-                mHandler.post(() -> {
-                    mEpgInfoGridView.requestLayout();
-                    mGroupEPG.requestLayout();
-                });
 
-                // 刷新 EPG 数据
                 if (currentLiveChannelItem != null) {
                     Date selectedDate = epgDateAdapter.getSelectedIndex() < 0 ? new Date() :
                             epgDateAdapter.getData().get(epgDateAdapter.getSelectedIndex()).getDateParamVal();
                     getEpg(selectedDate);
                 }
 
-                showChannelInfo(); // 显示底部栏
+                showChannelInfo();
             }
 
             @Override
             public void onChannelModeRequest() {
-                // 切换回频道模式（隐藏 EPG 视图，显示分组列表）
                 mEpgInfoGridView.setVisibility(View.GONE);
                 mGroupEPG.setVisibility(View.GONE);
                 mDivLeft.setVisibility(View.GONE);
@@ -544,7 +542,6 @@ public class LivePlayActivity extends BaseActivity {
                 View groupGridView = findViewById(R.id.mGroupGridView);
                 if (groupGridView != null) groupGridView.setVisibility(View.VISIBLE);
 
-                // 刷新频道列表数据（确保高亮正确）
                 channelListPanel.refreshFull(liveChannelGroupList, currentChannelGroupIndex, currentLiveChannelIndex);
                 showChannelList();
             }
@@ -610,7 +607,6 @@ public class LivePlayActivity extends BaseActivity {
 
         mBack.setOnClickListener(v -> finish());
 
-        // 默认隐藏 EPG 视图
         mEpgInfoGridView.setVisibility(View.GONE);
         mGroupEPG.setVisibility(View.GONE);
         mHandler.postDelayed(mUpdateLayout, 500);
@@ -751,7 +747,6 @@ public class LivePlayActivity extends BaseActivity {
         } else if (settingsPanel != null && settingsPanel.isShowing()) {
             settingsPanel.hide();
         } else if (channelListPanel != null && !channelListPanel.isShowing()) {
-            // 显示前强制同步高亮
             channelListPanel.updateSelectionAndScroll(currentChannelGroupIndex, currentLiveChannelIndex);
             channelListPanel.show();
             mHandler.post(tv_sys_timeRunnable);
@@ -1091,8 +1086,10 @@ public class LivePlayActivity extends BaseActivity {
             epgListAdapter.notifyDataSetChanged();
             mEpgInfoGridView.setSelectedPosition(position);
 
-            // 切换到 EPG 大面板
-            if (channelListPanel != null) channelListPanel.showEpgMode();
+            // 延迟调用确保播放器已启动，避免时序冲突
+            mHandler.postDelayed(() -> {
+                if (channelListPanel != null) channelListPanel.showEpgMode();
+            }, 100);
         }
     }
 
@@ -1429,10 +1426,7 @@ public class LivePlayActivity extends BaseActivity {
     private void switchToGroup(int groupIndex) {
         if (groupIndex >= liveChannelGroupList.size()) return;
 
-        currentChannelGroupIndex = groupIndex;
-        currentLiveChannelIndex = -1;
-        currentLiveChannelItem = null;
-
+        // 注意：不修改 currentChannelGroupIndex 和 currentLiveChannelIndex，只更新列表显示
         if (channelListPanel != null) {
             channelListPanel.loadGroup(groupIndex, liveChannelGroupList);
         }
@@ -1453,7 +1447,7 @@ public class LivePlayActivity extends BaseActivity {
             @Override
             public void onCancel() {
                 if (channelListPanel != null) {
-                    channelListPanel.refreshFull(liveChannelGroupList, currentChannelGroupIndex, currentLiveChannelIndex);
+                    channelListPanel.updateSelectionAndScroll(currentChannelGroupIndex, currentLiveChannelIndex);
                 }
             }
         });
