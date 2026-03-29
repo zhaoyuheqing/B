@@ -25,8 +25,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 左侧频道列表面板 - 最终稳定编译版
- * 已修复：setFocusedItemIndex 不存在的问题 + OnItemListener 完整实现
+ * 左侧频道列表面板 - 最终稳定修正版
+ * 已修复：
+ * 1. 显示时正确高亮当前播放的分组和频道（不再写死0）
+ * 2. 使用成员变量保存索引，避免 Adapter 状态时序问题
+ * 3. 保留原始版“等待滚动结束再设焦点”的逻辑
+ * 4. 与 EPG 大面板、密码分组、playChannel 完全兼容
  */
 public class LiveChannelListPanel {
 
@@ -47,6 +51,10 @@ public class LiveChannelListPanel {
 
     private ChannelListListener listener;
     private boolean isShowing = false;
+
+    // ==================== 新增：保存当前选中索引（关键修复） ====================
+    private int currentGroupIndex = 0;
+    private int currentChannelIndex = -1;
 
     private final Runnable hideRunnable = this::hideInternal;
     private final Runnable focusAndShowRunnable = this::focusAndShowInternal;
@@ -75,29 +83,35 @@ public class LiveChannelListPanel {
         initChannelView();
     }
 
-    // ==================== 统一刷新入口 ====================
+    // ==================== 数据刷新方法（同步保存索引） ====================
+    public void refreshFull(List<LiveChannelGroup> groups, int groupIndex, int channelIndex) {
+        this.currentGroupIndex = groupIndex;
+        this.currentChannelIndex = channelIndex;
 
-    public void refreshFull(List<LiveChannelGroup> groups, int currentGroupIndex, int currentChannelIndex) {
         if (groupAdapter != null) {
             groupAdapter.setNewData(groups);
-            groupAdapter.setSelectedGroupIndex(currentGroupIndex);
+            groupAdapter.setSelectedGroupIndex(groupIndex);
         }
 
         List<LiveChannelItem> channels = null;
-        if (currentGroupIndex >= 0 && groups != null && currentGroupIndex < groups.size()) {
-            channels = groups.get(currentGroupIndex).getLiveChannels();
+        if (groupIndex >= 0 && groups != null && groupIndex < groups.size()) {
+            channels = groups.get(groupIndex).getLiveChannels();
         }
+
         if (channelAdapter != null) {
             channelAdapter.setNewData(channels != null ? channels : new ArrayList<>());
-            channelAdapter.setSelectedChannelIndex(currentChannelIndex);
+            channelAdapter.setSelectedChannelIndex(channelIndex);
         }
 
         if (isShowing) {
-            scrollToCurrent(currentGroupIndex, currentChannelIndex);
+            scrollToCurrent(groupIndex, channelIndex);
         }
     }
 
     public void updateSelectionAndScroll(int groupIndex, int channelIndex) {
+        this.currentGroupIndex = groupIndex;
+        this.currentChannelIndex = channelIndex;
+
         if (groupAdapter != null) groupAdapter.setSelectedGroupIndex(groupIndex);
         if (channelAdapter != null) channelAdapter.setSelectedChannelIndex(channelIndex);
 
@@ -107,6 +121,9 @@ public class LiveChannelListPanel {
     }
 
     public void loadGroup(int groupIndex, List<LiveChannelGroup> allGroups) {
+        this.currentGroupIndex = groupIndex;
+        this.currentChannelIndex = -1;
+
         if (groupAdapter != null) {
             groupAdapter.setSelectedGroupIndex(groupIndex);
         }
@@ -141,7 +158,6 @@ public class LiveChannelListPanel {
     }
 
     // ==================== 显示/隐藏 ====================
-
     public void show() {
         if (isShowing) {
             handler.removeCallbacks(hideRunnable);
@@ -161,8 +177,7 @@ public class LiveChannelListPanel {
         return isShowing;
     }
 
-    // ==================== 初始化 ====================
-
+    // ==================== 初始化 Adapter（保持不变） ====================
     private void initGroupView() {
         TvRecyclerView groupView = groupViewRef.get();
         if (groupView == null) return;
@@ -180,7 +195,7 @@ public class LiveChannelListPanel {
             @Override
             public void onItemSelected(TvRecyclerView parent, View itemView, int position) {
                 if (groupAdapter != null) groupAdapter.setFocusedGroupIndex(position);
-                if (channelAdapter != null) channelAdapter.setFocusedChannelIndex(-1);   // 使用正确的 focused 方法
+                if (channelAdapter != null) channelAdapter.setFocusedChannelIndex(-1);
             }
 
             @Override
@@ -214,7 +229,7 @@ public class LiveChannelListPanel {
             public void onItemSelected(TvRecyclerView parent, View itemView, int position) {
                 if (position < 0) return;
                 if (groupAdapter != null) groupAdapter.setFocusedGroupIndex(-1);
-                if (channelAdapter != null) channelAdapter.setFocusedChannelIndex(position);  // 使用正确的 focused 方法
+                if (channelAdapter != null) channelAdapter.setFocusedChannelIndex(position);
 
                 handler.removeCallbacks(hideRunnable);
                 handler.postDelayed(hideRunnable, LiveConstants.AUTO_HIDE_CHANNEL_LIST_MS);
@@ -244,8 +259,7 @@ public class LiveChannelListPanel {
         listener.onChannelSelected(groupIndex, position);
     }
 
-    // ==================== 动画 ====================
-
+    // ==================== 关键修复：动画逻辑 ====================
     private void focusAndShowInternal() {
         TvRecyclerView groupView = groupViewRef.get();
         TvRecyclerView channelView = channelViewRef.get();
@@ -256,6 +270,7 @@ public class LiveChannelListPanel {
             return;
         }
 
+        // 检查是否还在滚动或计算布局
         boolean isScrolling = groupView.isScrolling() ||
                 (channelView != null && channelView.isScrolling()) ||
                 groupView.isComputingLayout() ||
@@ -266,10 +281,32 @@ public class LiveChannelListPanel {
             return;
         }
 
-        groupView.scrollToPosition(0);
-        groupView.setSelection(0);
+        // 使用保存的当前播放位置进行滚动和高亮
+        if (groupView != null) {
+            groupView.scrollToPosition(currentGroupIndex);
+            groupView.setSelection(currentGroupIndex);
+            if (groupAdapter != null) {
+                groupAdapter.setSelectedGroupIndex(currentGroupIndex);
+            }
+        }
+
+        if (channelView != null) {
+            if (currentChannelIndex >= 0) {
+                channelView.scrollToPosition(currentChannelIndex);
+                channelView.setSelection(currentChannelIndex);
+                if (channelAdapter != null) {
+                    channelAdapter.setSelectedChannelIndex(currentChannelIndex);
+                }
+            } else {
+                channelView.scrollToPosition(0);
+                channelView.setSelection(0);
+            }
+        }
+
+        // 请求焦点（保持原始行为）
         groupView.requestFocus();
 
+        // 显示动画
         rootView.setVisibility(View.VISIBLE);
         rootView.setAlpha(0.0f);
         rootView.setTranslationX(-rootView.getWidth() / 2f);
