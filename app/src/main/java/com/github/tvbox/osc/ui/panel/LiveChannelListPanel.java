@@ -25,10 +25,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 左侧频道列表面板 - 最终修复版
- * 修复：
- * - 显示面板时强制从 Activity 同步当前播放频道的高亮
- * - 回放时不再切换面板模式或刷新 EPG 列表
+ * 左侧频道列表面板 - 最终稳定版
+ * 已完全修复：
+ * - 显示时强制高亮当前直播节目
+ * - 不再干扰回放播放
  */
 public class LiveChannelListPanel {
 
@@ -51,7 +51,6 @@ public class LiveChannelListPanel {
     private final WeakReference<TvRecyclerView> groupViewRef;
     private final WeakReference<TvRecyclerView> channelViewRef;
 
-    // EPG相关视图
     private final WeakReference<LinearLayout> groupEpgRef;
     private final WeakReference<LinearLayout> divLeftRef;
     private final WeakReference<LinearLayout> divRightRef;
@@ -105,19 +104,16 @@ public class LiveChannelListPanel {
         initChannelView();
     }
 
-    // ==================== 公共方法 ====================
-
-    /**
-     * 从 Activity 强制同步高亮（用于显示面板前校正）
-     */
     public void syncHighlightFromActivity(int groupIndex, int channelIndex) {
         this.currentGroupIndex = groupIndex;
         this.currentChannelIndex = channelIndex;
         if (groupAdapter != null) {
             groupAdapter.setSelectedGroupIndex(groupIndex);
+            groupAdapter.setFocusedGroupIndex(groupIndex);
         }
         if (channelAdapter != null) {
             channelAdapter.setSelectedChannelIndex(channelIndex);
+            channelAdapter.setFocusedChannelIndex(channelIndex);
         }
     }
 
@@ -138,10 +134,6 @@ public class LiveChannelListPanel {
             channelAdapter.setNewData(channels != null ? channels : new ArrayList<>());
             channelAdapter.setSelectedChannelIndex(channelIndex);
         }
-
-        if (isShowing && !isEpgMode) {
-            scrollToCurrent(groupIndex, channelIndex);
-        }
     }
 
     public void updateSelectionAndScroll(int groupIndex, int channelIndex) {
@@ -150,10 +142,6 @@ public class LiveChannelListPanel {
 
         if (groupAdapter != null) groupAdapter.setSelectedGroupIndex(groupIndex);
         if (channelAdapter != null) channelAdapter.setSelectedChannelIndex(channelIndex);
-
-        if (isShowing && !isEpgMode) {
-            scrollToCurrent(groupIndex, channelIndex);
-        }
     }
 
     public void loadGroup(int groupIndex, List<LiveChannelGroup> allGroups) {
@@ -173,10 +161,6 @@ public class LiveChannelListPanel {
         if (channelAdapter != null) {
             channelAdapter.setNewData(channels != null ? channels : new ArrayList<>());
             channelAdapter.setSelectedChannelIndex(-1);
-        }
-
-        if (isShowing && !isEpgMode) {
-            scrollToCurrent(currentGroupIndex, currentChannelIndex);
         }
     }
 
@@ -224,7 +208,6 @@ public class LiveChannelListPanel {
             return;
         }
 
-        // 显示前强制从 Activity 同步当前播放频道的高亮
         if (listener != null) {
             syncHighlightFromActivity(listener.getCurrentGroupIndex(), listener.getCurrentChannelIndex());
         }
@@ -250,8 +233,6 @@ public class LiveChannelListPanel {
     public boolean isEpgMode() {
         return isEpgMode;
     }
-
-    // ==================== 私有方法 ====================
 
     private void setEpgViewsVisible(boolean visible) {
         LinearLayout groupEpg = groupEpgRef.get();
@@ -397,6 +378,10 @@ public class LiveChannelListPanel {
             channelView.scrollToPosition(currentChannel);
             channelView.setSelection(currentChannel);
         }
+
+        // 关键修复：强制请求焦点
+        if (groupAdapter != null) groupAdapter.setFocusedGroupIndex(currentGroup);
+        if (channelAdapter != null) channelAdapter.setFocusedChannelIndex(currentChannel);
 
         groupView.requestFocus();
 
