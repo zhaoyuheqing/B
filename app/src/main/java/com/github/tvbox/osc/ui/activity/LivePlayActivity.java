@@ -612,6 +612,9 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
         } else if (settingsPanel != null && settingsPanel.isShowing()) {
             settingsPanel.hide();
         } else if (channelListPanel != null) {
+            // 刷新频道数据，确保列表与当前分组同步
+            List<LiveChannelItem> channels = getLiveChannels(currentChannelGroupIndex);
+            channelListPanel.refreshChannelData(channels, currentLiveChannelIndex);
             channelListPanel.syncHighlightFromActivity(currentChannelGroupIndex, currentLiveChannelIndex);
             channelListPanel.show();
             mHandler.post(tv_sys_timeRunnable);
@@ -620,7 +623,10 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
 
     public void divLoadEpgR(View view) {
         if (settingsPanel != null && settingsPanel.isShowing()) settingsPanel.hide();
-        if (channelListPanel != null) channelListPanel.showEpgMode();
+        if (channelListPanel != null) {
+            channelListPanel.showEpgMode();
+            channelListPanel.show(); // 自动显示左侧列表（EPG视图）
+        }
     }
 
     public void divLoadEpgL(View view) {
@@ -1237,14 +1243,12 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
 
     private void switchToGroup(int groupIndex) {
         if (groupIndex >= liveChannelGroupList.size()) return;
+        // 仅加载分组列表，不自动播放
         if (channelListPanel != null) {
             channelListPanel.loadGroup(groupIndex, liveChannelGroupList);
         }
-        if (groupIndex == currentChannelGroupIndex) return;
-        List<LiveChannelItem> channels = getLiveChannels(groupIndex);
-        if (!channels.isEmpty()) {
-            playChannel(groupIndex, 0, false);
-        }
+        // 注意：原脚本行为是点击分组时不播放，只切换列表
+        // 因此这里不调用 playChannel
     }
 
     private void showPasswordDialogForGroup(int groupIndex) {
