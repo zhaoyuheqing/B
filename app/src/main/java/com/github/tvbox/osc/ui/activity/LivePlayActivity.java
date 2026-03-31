@@ -84,12 +84,7 @@ import xyz.doikki.videoplayer.player.VideoView;
 import xyz.doikki.videoplayer.util.PlayerUtils;
 
 /**
- * LivePlayActivity - 最终稳定版（已完全符合最新判断）
- * 修复点：
- * - EPG 点击完整闭环保留在 Activity（回放正常）
- * - 点击当前分组只刷新列表，不重新播放（还原原脚本）
- * - focusCurrentChannelRunnable 带重试机制
- * - Panel 为纯 UI 控制器
+ * LivePlayActivity - 最终稳定版（已完全符合最新判断 + 编译通过）
  */
 public class LivePlayActivity extends BaseActivity implements LiveChannelListPanel.ChannelListListener {
 
@@ -147,81 +142,109 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
     private boolean isShiyiMode = false;
     private static String shiyi_time;
 
-    private final Runnable mHideChannelInfoRun = () -> {
-        mBack.setVisibility(View.INVISIBLE);
-        if (tvBottomLayout.getVisibility() == View.VISIBLE) {
-            tvBottomLayout.animate().alpha(0.0f).setDuration(250).setInterpolator(new DecelerateInterpolator())
-                    .translationY(tvBottomLayout.getHeight() / 2).setListener(new AnimatorListenerAdapter() {
-                        @Override
-                        public void onAnimationEnd(Animator animation) {
-                            tvBottomLayout.setVisibility(View.INVISIBLE);
-                            tvBottomLayout.clearAnimation();
-                        }
-                    });
-        }
-    };
+    boolean mIsDragging;   // 必须提前声明，避免前向引用
 
-    private final Runnable mUpdateLayout = () -> {
-        if (mGroupEPG != null) mGroupEPG.requestLayout();
-        if (mEpgDateGridView != null) mEpgDateGridView.requestLayout();
-        if (mEpgInfoGridView != null) mEpgInfoGridView.requestLayout();
-    };
-
-    private final Runnable mUpdateTimeRun = () -> {
-        tvTime.setText(new SimpleDateFormat(LiveConstants.TIME_FORMAT_HHMMSS).format(new Date()));
-        mHandler.postDelayed(this, 1000);
-    };
-
-    private final Runnable mUpdateNetSpeedRun = () -> {
-        if (mVideoView != null) {
-            tvNetSpeed.setText(String.format("%.2fMB/s", (float) mVideoView.getTcpSpeed() / 1024.0 / 1024.0));
-        }
-        mHandler.postDelayed(this, 1000);
-    };
-
-    private final Runnable tv_sys_timeRunnable = () -> {
-        tv_sys_time.setText(new SimpleDateFormat(LiveConstants.TIME_FORMAT_HHMMSS, Locale.ENGLISH).format(new Date()));
-        mHandler.postDelayed(this, 1000);
-        if (mVideoView != null && !mIsDragging && mVideoView.getDuration() > 0) {
-            int pos = (int) mVideoView.getCurrentPosition();
-            mCurrentTime.setText(stringForTimeVod(pos));
-            mSeekBar.setProgress(pos);
-        }
-    };
-
-    private final Runnable mConnectTimeoutChangeSourceRun = () -> {
-        if (currentLiveChannelItem == null) return;
-        currentLiveChangeSourceTimes++;
-        if (currentLiveChannelItem.getSourceNum() == currentLiveChangeSourceTimes) {
-            currentLiveChangeSourceTimes = 0;
-            Integer[] idx = getNextChannel(Hawk.get(HawkConfig.LIVE_CHANNEL_REVERSE, false) ? -1 : 1);
-            if (idx[0] >= 0 && idx[1] >= 0) playChannel(idx[0], idx[1], false);
-        } else {
-            playNextSource();
-        }
-    };
-
-    private final Runnable mConnectTimeoutReplayRun = this::replayChannel;
-
-    private final Runnable mPlaySelectedChannel = () -> {
-        tvSelectedChannel.setVisibility(View.GONE);
-        tvSelectedChannel.setText("");
-        int grpIndx = 0, chaIndx = 0, getMin = 1, getMax;
-        for (int j = 0; j < LiveConstants.MAX_CHANNEL_GROUPS; j++) {
-            getMax = getMin + getLiveChannels(j).size() - 1;
-            if (selectedChannelNumber >= getMin && selectedChannelNumber <= getMax) {
-                grpIndx = j;
-                chaIndx = selectedChannelNumber - getMin + 1;
-                break;
-            } else {
-                getMin = getMax + 1;
+    // ==================== Runnable（全部改回匿名内部类） ====================
+    private final Runnable mHideChannelInfoRun = new Runnable() {
+        @Override
+        public void run() {
+            mBack.setVisibility(View.INVISIBLE);
+            if (tvBottomLayout.getVisibility() == View.VISIBLE) {
+                tvBottomLayout.animate().alpha(0.0f).setDuration(250).setInterpolator(new DecelerateInterpolator())
+                        .translationY(tvBottomLayout.getHeight() / 2).setListener(new AnimatorListenerAdapter() {
+                            @Override
+                            public void onAnimationEnd(Animator animation) {
+                                tvBottomLayout.setVisibility(View.INVISIBLE);
+                                tvBottomLayout.clearAnimation();
+                            }
+                        });
             }
         }
-        if (selectedChannelNumber > 0) playChannel(grpIndx, chaIndx - 1, false);
-        selectedChannelNumber = 0;
     };
 
-    boolean mIsDragging;
+    private final Runnable mUpdateLayout = new Runnable() {
+        @Override
+        public void run() {
+            if (mGroupEPG != null) mGroupEPG.requestLayout();
+            if (mEpgDateGridView != null) mEpgDateGridView.requestLayout();
+            if (mEpgInfoGridView != null) mEpgInfoGridView.requestLayout();
+        }
+    };
+
+    private final Runnable mUpdateTimeRun = new Runnable() {
+        @Override
+        public void run() {
+            tvTime.setText(new SimpleDateFormat(LiveConstants.TIME_FORMAT_HHMMSS).format(new Date()));
+            mHandler.postDelayed(this, 1000);
+        }
+    };
+
+    private final Runnable mUpdateNetSpeedRun = new Runnable() {
+        @Override
+        public void run() {
+            if (mVideoView != null) {
+                tvNetSpeed.setText(String.format("%.2fMB/s", (float) mVideoView.getTcpSpeed() / 1024.0 / 1024.0));
+            }
+            mHandler.postDelayed(this, 1000);
+        }
+    };
+
+    private final Runnable tv_sys_timeRunnable = new Runnable() {
+        @Override
+        public void run() {
+            tv_sys_time.setText(new SimpleDateFormat(LiveConstants.TIME_FORMAT_HHMMSS, Locale.ENGLISH).format(new Date()));
+            mHandler.postDelayed(this, 1000);
+            if (mVideoView != null && !mIsDragging && mVideoView.getDuration() > 0) {
+                int pos = (int) mVideoView.getCurrentPosition();
+                mCurrentTime.setText(stringForTimeVod(pos));
+                mSeekBar.setProgress(pos);
+            }
+        }
+    };
+
+    private final Runnable mConnectTimeoutChangeSourceRun = new Runnable() {
+        @Override
+        public void run() {
+            if (currentLiveChannelItem == null) return;
+            currentLiveChangeSourceTimes++;
+            if (currentLiveChannelItem.getSourceNum() == currentLiveChangeSourceTimes) {
+                currentLiveChangeSourceTimes = 0;
+                Integer[] idx = getNextChannel(Hawk.get(HawkConfig.LIVE_CHANNEL_REVERSE, false) ? -1 : 1);
+                if (idx[0] >= 0 && idx[1] >= 0) playChannel(idx[0], idx[1], false);
+            } else {
+                playNextSource();
+            }
+        }
+    };
+
+    private final Runnable mConnectTimeoutReplayRun = new Runnable() {
+        @Override
+        public void run() {
+            replayChannel();
+        }
+    };
+
+    private final Runnable mPlaySelectedChannel = new Runnable() {
+        @Override
+        public void run() {
+            tvSelectedChannel.setVisibility(View.GONE);
+            tvSelectedChannel.setText("");
+            int grpIndx = 0, chaIndx = 0, getMin = 1, getMax;
+            for (int j = 0; j < LiveConstants.MAX_CHANNEL_GROUPS; j++) {
+                getMax = getMin + getLiveChannels(j).size() - 1;
+                if (selectedChannelNumber >= getMin && selectedChannelNumber <= getMax) {
+                    grpIndx = j;
+                    chaIndx = selectedChannelNumber - getMin + 1;
+                    break;
+                } else {
+                    getMin = getMax + 1;
+                }
+            }
+            if (selectedChannelNumber > 0) playChannel(grpIndx, chaIndx - 1, false);
+            selectedChannelNumber = 0;
+        }
+    };
+
     boolean isVOD = false;
     boolean PiPON = Hawk.get(HawkConfig.BACKGROUND_PLAY_TYPE, 0) == 2;
     private long mExitTime = 0;
@@ -1189,7 +1212,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
         if (channelListPanel != null) {
             channelListPanel.loadGroup(groupIndex, liveChannelGroupList);
         }
-        // 关键修复：如果点击的是当前正在播放的分组，只刷新列表，不重新播放
+        // 关键：点击当前组只刷新列表，不重新播放
         if (groupIndex == currentChannelGroupIndex) {
             return;
         }
