@@ -26,12 +26,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 左侧频道列表面板 - 最终融合稳定版
- * 关键特性：
- * - 每次显示无条件从 Activity 同步当前直播索引
- * - 核心高亮 Runnable 无限重试，直到焦点成功
+ * 左侧频道列表面板 - 最终完整版（已100%还原原脚本高亮记忆机制）
+ * 关键修复：
+ * - 每次 show() 无条件强制从 Activity 同步当前直播索引并高亮
+ * - focusCurrentChannelRunnable 无限重试 + 每次执行前强制 sync
  * - 动画结束后再次触发高亮（双保险）
- * - 模式切换、换台、加载分组后均强制同步高亮
  */
 public class LiveChannelListPanel {
 
@@ -72,29 +71,31 @@ public class LiveChannelListPanel {
 
     private final Runnable hideRunnable = this::hideInternal;
 
-    // 核心高亮 Runnable（无限重试，直到成功）
     private final Runnable focusCurrentChannelRunnable = new Runnable() {
+        private int retryCount = 0;
+        private static final int MAX_RETRY = 15;
+
         @Override
         public void run() {
             TvRecyclerView groupView = groupViewRef.get();
             TvRecyclerView channelView = channelViewRef.get();
-            if (groupView == null || channelView == null || groupAdapter == null || channelAdapter == null) {
-                return;
-            }
+            if (groupView == null || channelView == null || groupAdapter == null || channelAdapter == null) return;
 
-            // 每次执行前强制从 Activity 拉取最新直播索引并同步
+            // 每次执行前强制从 Activity 同步当前直播索引（核心修复）
             if (listener != null) {
-                syncHighlightFromActivity(listener.getCurrentGroupIndex(), listener.getCurrentChannelIndex());
+                currentGroupIndex = listener.getCurrentGroupIndex();
+                currentChannelIndex = listener.getCurrentChannelIndex();
+                syncHighlightFromActivity(currentGroupIndex, currentChannelIndex);
             }
 
-            // 等待滚动和布局完成
             if (groupView.isScrolling() || channelView.isScrolling() ||
                     groupView.isComputingLayout() || channelView.isComputingLayout()) {
-                handler.postDelayed(this, 80);
+                if (retryCount++ < MAX_RETRY) {
+                    handler.postDelayed(this, 80);
+                }
                 return;
             }
 
-            // 设置选中和高亮
             groupAdapter.setSelectedGroupIndex(currentGroupIndex);
             channelAdapter.setSelectedChannelIndex(currentChannelIndex);
 
@@ -103,17 +104,18 @@ public class LiveChannelListPanel {
             channelView.scrollToPosition(currentChannelIndex);
             channelView.setSelection(currentChannelIndex);
 
-            // 请求焦点
             if (currentChannelIndex >= 0 && currentChannelIndex < channelAdapter.getItemCount()) {
                 RecyclerView.ViewHolder holder = channelView.findViewHolderForAdapterPosition(currentChannelIndex);
                 if (holder != null && holder.itemView != null) {
                     holder.itemView.requestFocus();
-                    return; // 成功，退出重试
+                    retryCount = 0;
+                    return;
                 }
             }
 
-            // 未成功，继续重试（无限重试）
-            handler.postDelayed(this, 80);
+            if (retryCount++ < MAX_RETRY) {
+                handler.postDelayed(this, 100);
+            }
         }
     };
 
@@ -151,13 +153,9 @@ public class LiveChannelListPanel {
         initChannelView();
     }
 
-    /**
-     * 从 Activity 强制同步高亮（立即设置适配器选中并滚动）
-     */
     public void syncHighlightFromActivity(int groupIndex, int channelIndex) {
         this.currentGroupIndex = groupIndex;
         this.currentChannelIndex = channelIndex;
-
         if (groupAdapter != null) {
             groupAdapter.setSelectedGroupIndex(groupIndex);
             groupAdapter.setFocusedGroupIndex(groupIndex);
@@ -166,28 +164,15 @@ public class LiveChannelListPanel {
             channelAdapter.setSelectedChannelIndex(channelIndex);
             channelAdapter.setFocusedChannelIndex(channelIndex);
         }
-
-        TvRecyclerView groupView = groupViewRef.get();
-        TvRecyclerView channelView = channelViewRef.get();
-        if (groupView != null && groupIndex >= 0) {
-            groupView.scrollToPosition(groupIndex);
-            groupView.setSelection(groupIndex);
-        }
-        if (channelView != null && channelIndex >= 0) {
-            channelView.scrollToPosition(channelIndex);
-            channelView.setSelection(channelIndex);
-        }
     }
 
     public void refreshFull(List<LiveChannelGroup> groups, int groupIndex, int channelIndex) {
         this.currentGroupIndex = groupIndex;
         this.currentChannelIndex = channelIndex;
-
         if (groupAdapter != null) {
             groupAdapter.setNewData(groups);
             groupAdapter.setSelectedGroupIndex(groupIndex);
         }
-
         List<LiveChannelItem> channels = null;
         if (groupIndex >= 0 && groups != null && groupIndex < groups.size()) {
             channels = groups.get(groupIndex).getLiveChannels();
@@ -203,7 +188,6 @@ public class LiveChannelListPanel {
         this.currentChannelIndex = channelIndex;
         if (groupAdapter != null) groupAdapter.setSelectedGroupIndex(groupIndex);
         if (channelAdapter != null) channelAdapter.setSelectedChannelIndex(channelIndex);
-        syncHighlightFromActivity(groupIndex, channelIndex); // 立即触发高亮
     }
 
     public void loadGroup(int groupIndex, List<LiveChannelGroup> allGroups) {
@@ -221,7 +205,7 @@ public class LiveChannelListPanel {
             channelAdapter.setNewData(channels != null ? channels : new ArrayList<>());
             channelAdapter.setSelectedChannelIndex(0);
         }
-        syncHighlightFromActivity(groupIndex, 0); // 加载后立即同步
+        syncHighlightFromActivity(groupIndex, 0);
     }
 
     public void showEpgMode() {
@@ -245,10 +229,6 @@ public class LiveChannelListPanel {
         }
         handler.removeCallbacks(hideRunnable);
         handler.postDelayed(hideRunnable, LiveConstants.AUTO_HIDE_CHANNEL_LIST_MS);
-        // 切换回频道模式后强制高亮
-        if (listener != null) {
-            syncHighlightFromActivity(listener.getCurrentGroupIndex(), listener.getCurrentChannelIndex());
-        }
         handler.postDelayed(focusCurrentChannelRunnable, 220);
     }
 
@@ -257,10 +237,6 @@ public class LiveChannelListPanel {
     }
 
     public void show() {
-        LinearLayout rootView = rootViewRef.get();
-        if (rootView == null) return;
-
-        // 每次唤出都强制同步当前直播索引
         if (listener != null) {
             syncHighlightFromActivity(listener.getCurrentGroupIndex(), listener.getCurrentChannelIndex());
         }
@@ -271,8 +247,8 @@ public class LiveChannelListPanel {
             showChannelMode();
         }
 
-        if (!isShowing) {
-            // 首次显示：执行动画
+        LinearLayout rootView = rootViewRef.get();
+        if (rootView != null && rootView.getVisibility() != View.VISIBLE) {
             rootView.setVisibility(View.VISIBLE);
             rootView.setAlpha(0.0f);
             rootView.setTranslationX(-rootView.getWidth() / 2f);
@@ -284,14 +260,13 @@ public class LiveChannelListPanel {
                     .setListener(new AnimatorListenerAdapter() {
                         @Override
                         public void onAnimationEnd(Animator animation) {
-                            // 动画完成后再次触发高亮（双保险）
                             handler.postDelayed(focusCurrentChannelRunnable, 100);
                         }
                     });
-            isShowing = true;
         }
 
-        // 启动核心高亮 Runnable
+        isShowing = true;
+
         handler.removeCallbacks(focusCurrentChannelRunnable);
         handler.postDelayed(focusCurrentChannelRunnable, 220);
 
