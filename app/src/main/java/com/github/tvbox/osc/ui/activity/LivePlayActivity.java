@@ -565,16 +565,13 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
             if (channelListPanel != null) {
                 channelListPanel.loadGroup(groupIndex, liveChannelGroupList);
             }
-            // 自动播放该组的当前频道或第一个频道（与原脚本行为一致）
+            // 自动播放该组第一个频道（与原脚本行为一致）
             List<LiveChannelItem> channels = getLiveChannels(groupIndex);
             if (!channels.isEmpty()) {
                 // 如果当前组与目标组相同且当前频道有效，则不切换；否则播放第一个频道
                 if (groupIndex != currentChannelGroupIndex) {
                     playChannel(groupIndex, 0, false);
-                } else if (currentLiveChannelIndex >= 0 && currentLiveChannelIndex < channels.size()) {
-                    // 已在同组，保持当前频道
-                    // 但需刷新面板高亮（已在 playChannel 中同步）
-                } else {
+                } else if (currentLiveChannelIndex < 0 || currentLiveChannelIndex >= channels.size()) {
                     playChannel(groupIndex, 0, false);
                 }
             }
@@ -597,7 +594,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
     }
 
     @Override
-    public void onEpgItemClicked(Epginfo epgItem, int selectedDateIndex) {
+    public void onEpgItemClicked(Epginfo epgItem, int position, int selectedDateIndex) {
         if (currentLiveChannelItem == null || epgItem == null) return;
         Date date = epgDateAdapter.getData().get(selectedDateIndex).getDateParamVal();
         SimpleDateFormat dateFormat = new SimpleDateFormat(LiveConstants.DATE_FORMAT_YMD_NUM);
@@ -611,7 +608,6 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
             Toast.makeText(this, "未到播放时间", Toast.LENGTH_SHORT).show();
             return;
         }
-        int position = epgListAdapter.getData().indexOf(epgItem);
         epgListAdapter.setSelectedEpgIndex(position);
         if (now.compareTo(epgItem.startdateTime) >= 0 && now.compareTo(epgItem.enddateTime) <= 0) {
             mVideoView.release();
@@ -746,14 +742,14 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
             tv_next_name.setText("");
             return;
         }
-        // 从缓存获取最新数据，避免依赖成员变量 epgdata
+        // 从缓存获取最新数据
         String channelName = currentLiveChannelItem.getChannelName();
         Date selectedDate = epgDateAdapter.getSelectedIndex() < 0 ? new Date() :
                 epgDateAdapter.getData().get(epgDateAdapter.getSelectedIndex()).getDateParamVal();
         String dateStr = new SimpleDateFormat(LiveConstants.DATE_FORMAT_YMD).format(selectedDate);
         ArrayList<Epginfo> currentEpgData = epgCacheHelper.getCachedEpg(channelName, dateStr);
         if (currentEpgData != null && !currentEpgData.isEmpty()) {
-            epgdata = currentEpgData; // 同步成员变量
+            epgdata = currentEpgData;
             String[] epgInfo = EpgUtil.getEpgInfo(channelName);
             getTvLogo(channelName, epgInfo == null ? null : epgInfo[0]);
             Date now = new Date();
@@ -923,7 +919,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
                 Epginfo item = epgListAdapter.getItem(position);
                 int dateIndex = epgDateAdapter.getSelectedIndex();
                 if (channelListPanel != null) {
-                    channelListPanel.notifyEpgClicked(item, dateIndex);
+                    channelListPanel.notifyEpgClicked(item, position, dateIndex);
                 } else {
                     handleEpgItemClick(position);
                 }
@@ -935,7 +931,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
             Epginfo item = epgListAdapter.getItem(position);
             int dateIndex = epgDateAdapter.getSelectedIndex();
             if (channelListPanel != null) {
-                channelListPanel.notifyEpgClicked(item, dateIndex);
+                channelListPanel.notifyEpgClicked(item, position, dateIndex);
             } else {
                 handleEpgItemClick(position);
             }
