@@ -87,7 +87,7 @@ import xyz.doikki.videoplayer.player.VideoView;
 import xyz.doikki.videoplayer.util.PlayerUtils;
 
 /**
- * LivePlayActivity - 最终修正版
+ * LivePlayActivity - 最终修正版（添加 isShiyiMode 重置）
  * 修复：EPG显示时序、时移格式、设置面板开关行为、重复代码、无源提示等
  */
 public class LivePlayActivity extends BaseActivity {
@@ -935,6 +935,9 @@ public class LivePlayActivity extends BaseActivity {
     // ==================== 区域6: 播放控制方法 ====================
 
     private boolean playChannel(int channelGroupIndex, int liveChannelIndex, boolean changeSource) {
+        // 重置回放模式，确保每次切换频道或线路时退出时移状态
+        isShiyiMode = false;
+
         if (channelGroupIndex >= liveChannelGroupList.size()) {
             Toast.makeText(App.getInstance(), "分组不存在", Toast.LENGTH_SHORT).show();
             return false;
