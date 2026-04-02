@@ -338,8 +338,6 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
             showBottomEpg();
             return;
         }
-        // 清空当前列表，显示加载中
-        epgListAdapter.setNewData(new ArrayList<>());
         epgCacheHelper.requestEpg(channelName, date, new EpgCacheHelper.EpgCallback() {
             @Override
             public void onSuccess(String channelName, Date date, ArrayList<Epginfo> epgList) {
@@ -349,12 +347,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
                 }
             }
             @Override
-            public void onFailure(String channelName, Date date, Exception e) {
-                // 失败时显示暂无信息
-                ArrayList<Epginfo> errorList = new ArrayList<>();
-                errorList.add(new Epginfo(date, LiveConstants.NO_PROGRAM, date, LiveConstants.DEFAULT_START_TIME, LiveConstants.DEFAULT_END_TIME, 0));
-                showEpg(date, errorList);
-            }
+            public void onFailure(String channelName, Date date, Exception e) {}
         });
     }
 
@@ -479,7 +472,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
             }
         });
 
-        // 左侧列表面板
+        // 左侧列表面板（改为局部变量，不在成员变量中声明）
         LinearLayout tvLeftChannelListLayout = findViewById(R.id.tvLeftChannelListLayout);
         TvRecyclerView mGroupGridView = findViewById(R.id.mGroupGridView);
         TvRecyclerView mChannelGridView = findViewById(R.id.mChannelGridView);
@@ -572,6 +565,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
             if (channelListPanel != null) {
                 channelListPanel.loadGroup(groupIndex, liveChannelGroupList);
             }
+            // 原始脚本不自动播放，只切换列表
         }
     }
 
@@ -612,7 +606,6 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
             mVideoView.setUrl(currentLiveChannelItem.getUrl(), setPlayHeaders(currentLiveChannelItem.getUrl()));
             mVideoView.start();
             epgListAdapter.setShiyiSelection(-1, false, timeFormat.format(date));
-            showChannelInfo();
         } else {
             if (!isValidShiyiTime(shiyiStartdate, shiyiEnddate)) {
                 Toast.makeText(this, "无效的回放时间", Toast.LENGTH_SHORT).show();
@@ -633,6 +626,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
 
     @Override
     public void onPanelHidden() {
+        // 面板隐藏时停止系统时间更新
         mHandler.removeCallbacks(tv_sys_timeRunnable);
     }
 
@@ -647,9 +641,11 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
         } else if (channelListPanel != null) {
             if (channelListPanel.isShowing()) {
                 channelListPanel.hide();
+                // 停止时间更新已在 onPanelHidden 中处理
                 return;
             }
             channelListPanel.show();
+            // 启动时间更新：先移除再 post
             mHandler.removeCallbacks(tv_sys_timeRunnable);
             mHandler.post(tv_sys_timeRunnable);
             mHandler.postDelayed(mUpdateLayout, 255);
@@ -659,12 +655,13 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
     public void divLoadEpgR(View view) {
         if (settingsPanel != null && settingsPanel.isShowing()) settingsPanel.hide();
         if (channelListPanel != null) {
-            if (channelListPanel.isEpgMode() && channelListPanel.isShowing()) {
-                channelListPanel.hide();
-                return;
-            }
+            // 先切换模式
             channelListPanel.showEpgMode();
-            if (!channelListPanel.isShowing()) {
+            // 然后 toggle 面板：若已显示则隐藏，否则显示
+            if (channelListPanel.isShowing()) {
+                channelListPanel.hide();
+                // 停止时间更新已在 onPanelHidden 中处理
+            } else {
                 channelListPanel.show();
                 mHandler.removeCallbacks(tv_sys_timeRunnable);
                 mHandler.post(tv_sys_timeRunnable);
@@ -675,12 +672,10 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
 
     public void divLoadEpgL(View view) {
         if (channelListPanel != null) {
-            if (!channelListPanel.isEpgMode() && channelListPanel.isShowing()) {
-                channelListPanel.hide();
-                return;
-            }
             channelListPanel.showChannelMode();
-            if (!channelListPanel.isShowing()) {
+            if (channelListPanel.isShowing()) {
+                channelListPanel.hide();
+            } else {
                 channelListPanel.show();
                 mHandler.removeCallbacks(tv_sys_timeRunnable);
                 mHandler.post(tv_sys_timeRunnable);
@@ -693,6 +688,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
         mBack.setVisibility(View.INVISIBLE);
         if (channelListPanel != null && channelListPanel.isShowing()) {
             channelListPanel.hide();
+            // 停止时间更新已在 onPanelHidden 中处理
         }
         if (tvBottomLayout.getVisibility() == View.VISIBLE) mHandler.post(mHideChannelInfoRun);
         if (settingsPanel != null) {
@@ -729,13 +725,12 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
     }
 
     private void showEpg(Date date, ArrayList<Epginfo> arrayList) {
-        if (arrayList != null && !arrayList.isEmpty()) {
+        if (arrayList != null && arrayList.size() > 0) {
             epgdata = arrayList;
             if (currentLiveChannelItem != null) {
                 epgListAdapter.CanBack(currentLiveChannelItem.getinclude_back());
             }
             epgListAdapter.setNewData(epgdata);
-            // 滚动到当前播放的节目
             int i = -1;
             for (int size = epgdata.size() - 1; size >= 0; size--) {
                 if (new Date().compareTo(epgdata.get(size).startdateTime) >= 0) {
@@ -751,10 +746,9 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
                 mEpgInfoGridView.post(() -> mEpgInfoGridView.smoothScrollToPosition(finalI));
             }
         } else {
-            // 无数据时显示占位符
-            ArrayList<Epginfo> placeholder = new ArrayList<>();
-            placeholder.add(new Epginfo(date, LiveConstants.NO_PROGRAM, date, LiveConstants.DEFAULT_START_TIME, LiveConstants.DEFAULT_END_TIME, 0));
-            epgdata = placeholder;
+            Epginfo epgbcinfo = new Epginfo(date, LiveConstants.NO_PROGRAM, date, LiveConstants.DEFAULT_START_TIME, LiveConstants.DEFAULT_END_TIME, 0);
+            arrayList.add(epgbcinfo);
+            epgdata = arrayList;
             epgListAdapter.setNewData(epgdata);
         }
     }
@@ -772,10 +766,10 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
         String dateStr = new SimpleDateFormat(LiveConstants.DATE_FORMAT_YMD).format(selectedDate);
         ArrayList<Epginfo> currentEpgData = epgCacheHelper.getCachedEpg(channelName, dateStr);
         if (currentEpgData != null && !currentEpgData.isEmpty()) {
+            epgdata = currentEpgData;
             String[] epgInfo = EpgUtil.getEpgInfo(channelName);
             getTvLogo(channelName, epgInfo == null ? null : epgInfo[0]);
             Date now = new Date();
-            boolean found = false;
             for (int size = currentEpgData.size() - 1; size >= 0; size--) {
                 Epginfo epg = currentEpgData.get(size);
                 if (now.after(epg.startdateTime) && now.before(epg.enddateTime)) {
@@ -789,14 +783,13 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
                         tv_next_time.setText(LiveConstants.DEFAULT_START_TIME + " - " + LiveConstants.DEFAULT_END_TIME);
                         tv_next_name.setText(LiveConstants.NO_INFO);
                     }
-                    found = true;
                     break;
                 }
             }
-            if (!found) {
-                tv_curr_name.setText(LiveConstants.NO_PROGRAM);
-                tv_next_name.setText("");
+            if (currentLiveChannelItem != null) {
+                epgListAdapter.CanBack(currentLiveChannelItem.getinclude_back());
             }
+            epgListAdapter.setNewData(currentEpgData);
         } else {
             tv_curr_name.setText(LiveConstants.NO_PROGRAM);
             tv_next_name.setText("");
@@ -810,6 +803,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
 
     // ========== 播放控制 ==========
     private boolean playChannel(int channelGroupIndex, int liveChannelIndex, boolean changeSource) {
+        // 重置时移模式
         isShiyiMode = false;
         shiyi_time = null;
         if (epgListAdapter != null) {
@@ -848,7 +842,6 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
             }
         }
         currentLiveChannelItem.setinclude_back(currentLiveChannelItem.getUrl().indexOf(LiveConstants.PLTV_FLAG + "8888") != -1);
-        mHandler.removeCallbacks(tv_sys_timeRunnable);
         mHandler.post(tv_sys_timeRunnable);
         tv_channelname.setText(currentLiveChannelItem.getChannelName());
         tv_channelnum.setText("" + currentLiveChannelItem.getChannelNum());
@@ -878,7 +871,6 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
         HawkUtils.setLastLiveChannelGroup(liveChannelGroupList.get(currentChannelGroupIndex).getGroupName());
         livePlayerManager.getLiveChannelPlayer(mVideoView, currentLiveChannelItem.getChannelName());
         currentLiveChannelItem.setinclude_back(currentLiveChannelItem.getUrl().indexOf(LiveConstants.PLTV_FLAG + "8888") != -1);
-        mHandler.removeCallbacks(tv_sys_timeRunnable);
         mHandler.post(tv_sys_timeRunnable);
         tv_channelname.setText(currentLiveChannelItem.getChannelName());
         tv_channelnum.setText("" + currentLiveChannelItem.getChannelNum());
@@ -966,6 +958,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
             }
         };
         mEpgInfoGridView.setOnItemListener(listener);
+        // 不设置 setOnItemClickListener，避免重复触发
     }
 
     private void initEpgDateView() {
@@ -1004,11 +997,10 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
             public void onItemClick(TvRecyclerView parent, View itemView, int position) {
                 if (channelListPanel != null) channelListPanel.resetHideTimer();
                 epgDateAdapter.setSelectedIndex(position);
-                // 关键修复：点击日期时清空列表并立即刷新
-                epgListAdapter.setNewData(new ArrayList<>());
                 getEpg(epgDateAdapter.getData().get(position).getDateParamVal());
             }
         });
+        // 移除 setOnItemClickListener，避免重复
         epgDateAdapter.setSelectedIndex(6);
     }
 
@@ -1191,6 +1183,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
                 channelListPanel.refreshFull(liveChannelGroupList, currentChannelGroupIndex, currentLiveChannelIndex);
             }
         } else {
+            // 获取上次播放的组和频道
             int lastChannelGroupIndex = -1;
             int lastLiveChannelIndex = -1;
             Intent intent = getIntent();
@@ -1203,6 +1196,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
                 lastChannelGroupIndex = lastChannel.getFirst();
                 lastLiveChannelIndex = lastChannel.getSecond();
             }
+            // 先播放频道（如有），避免面板刷新时高亮闪烁
             if (lastChannelGroupIndex >= 0 && lastLiveChannelIndex >= 0 &&
                     lastChannelGroupIndex < liveChannelGroupList.size() &&
                     lastLiveChannelIndex < liveChannelGroupList.get(lastChannelGroupIndex).getLiveChannels().size()) {
@@ -1214,6 +1208,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
                     playChannel(0, 0, false);
                 }
             }
+            // 再刷新面板（此时高亮已由播放动作同步）
             if (channelListPanel != null) {
                 channelListPanel.refreshFull(liveChannelGroupList, currentChannelGroupIndex, currentLiveChannelIndex);
             }
@@ -1298,6 +1293,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
             }
             @Override
             public void onCancel() {
+                // 取消时只恢复频道列表，不改变选中（与原脚本一致）
                 if (channelListPanel != null) {
                     channelListPanel.refreshChannelListOnly(groupIndex);
                 }
@@ -1373,6 +1369,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
     public void onBackPressed() {
         if (channelListPanel != null && channelListPanel.isShowing()) {
             channelListPanel.hide();
+            // 停止时间更新已在 onPanelHidden 中处理
         } else if (settingsPanel != null && settingsPanel.isShowing()) {
             settingsPanel.hide();
         } else if (tvBottomLayout.getVisibility() == View.VISIBLE) {
@@ -1400,6 +1397,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
     public boolean dispatchKeyEvent(KeyEvent event) {
         if (event.getAction() == KeyEvent.ACTION_DOWN) {
             int keyCode = event.getKeyCode();
+            // 交互时重置自动隐藏计时器
             if (channelListPanel != null && channelListPanel.isShowing()) {
                 channelListPanel.resetHideTimer();
             }
