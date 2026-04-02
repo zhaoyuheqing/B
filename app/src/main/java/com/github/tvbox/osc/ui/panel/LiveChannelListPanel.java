@@ -39,7 +39,7 @@ public class LiveChannelListPanel {
         int getCurrentChannelIndex();
         void updateCurrentChannel(int groupIndex, int channelIndex);
         boolean isNeedInputPassword(int groupIndex);
-        void onPanelHidden(); // 新增：面板隐藏时的回调
+        void onPanelHidden(); // 面板隐藏时的回调
     }
 
     private final WeakReference<Context> contextRef;
