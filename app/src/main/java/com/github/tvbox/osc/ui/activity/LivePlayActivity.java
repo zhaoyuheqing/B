@@ -624,6 +624,12 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
         }
     }
 
+    @Override
+    public void onPanelHidden() {
+        // 面板隐藏时停止系统时间更新
+        mHandler.removeCallbacks(tv_sys_timeRunnable);
+    }
+
     // ========== UI 显示 ==========
     private void showChannelList() {
         mBack.setVisibility(View.INVISIBLE);
@@ -635,12 +641,13 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
         } else if (channelListPanel != null) {
             if (channelListPanel.isShowing()) {
                 channelListPanel.hide();
-                mHandler.removeCallbacks(tv_sys_timeRunnable);
+                // 停止时间更新已在 onPanelHidden 中处理
                 return;
             }
             channelListPanel.show();
+            // 启动时间更新：先移除再 post
+            mHandler.removeCallbacks(tv_sys_timeRunnable);
             mHandler.post(tv_sys_timeRunnable);
-            // 补上布局刷新（原脚本在显示列表后会调用）
             mHandler.postDelayed(mUpdateLayout, 255);
         }
     }
@@ -648,10 +655,15 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
     public void divLoadEpgR(View view) {
         if (settingsPanel != null && settingsPanel.isShowing()) settingsPanel.hide();
         if (channelListPanel != null) {
+            // 先切换模式
             channelListPanel.showEpgMode();
-            if (!channelListPanel.isShowing()) {
+            // 然后 toggle 面板：若已显示则隐藏，否则显示
+            if (channelListPanel.isShowing()) {
+                channelListPanel.hide();
+                // 停止时间更新已在 onPanelHidden 中处理
+            } else {
                 channelListPanel.show();
-                // 启动时间更新
+                mHandler.removeCallbacks(tv_sys_timeRunnable);
                 mHandler.post(tv_sys_timeRunnable);
             }
         }
@@ -661,8 +673,11 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
     public void divLoadEpgL(View view) {
         if (channelListPanel != null) {
             channelListPanel.showChannelMode();
-            if (!channelListPanel.isShowing()) {
+            if (channelListPanel.isShowing()) {
+                channelListPanel.hide();
+            } else {
                 channelListPanel.show();
+                mHandler.removeCallbacks(tv_sys_timeRunnable);
                 mHandler.post(tv_sys_timeRunnable);
             }
         }
@@ -671,7 +686,10 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
 
     private void showSettingGroup() {
         mBack.setVisibility(View.INVISIBLE);
-        if (channelListPanel != null && channelListPanel.isShowing()) channelListPanel.hide();
+        if (channelListPanel != null && channelListPanel.isShowing()) {
+            channelListPanel.hide();
+            // 停止时间更新已在 onPanelHidden 中处理
+        }
         if (tvBottomLayout.getVisibility() == View.VISIBLE) mHandler.post(mHideChannelInfoRun);
         if (settingsPanel != null) {
             if (settingsPanel.isShowing()) settingsPanel.hide();
@@ -1276,10 +1294,8 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
             @Override
             public void onCancel() {
                 // 取消时只恢复频道列表，不改变选中（与原脚本一致）
-                if (channelListPanel != null && channelAdapter != null) {
-                    List<LiveChannelItem> channels = getLiveChannels(groupIndex);
-                    channelAdapter.setNewData(channels);
-                    // 不设置选中索引，保持原状
+                if (channelListPanel != null) {
+                    channelListPanel.refreshChannelListOnly(groupIndex);
                 }
             }
         });
@@ -1353,6 +1369,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
     public void onBackPressed() {
         if (channelListPanel != null && channelListPanel.isShowing()) {
             channelListPanel.hide();
+            // 停止时间更新已在 onPanelHidden 中处理
         } else if (settingsPanel != null && settingsPanel.isShowing()) {
             settingsPanel.hide();
         } else if (tvBottomLayout.getVisibility() == View.VISIBLE) {
