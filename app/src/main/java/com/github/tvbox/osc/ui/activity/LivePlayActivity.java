@@ -639,7 +639,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
             }
             channelListPanel.show();
             mHandler.post(tv_sys_timeRunnable);
-            // 修复2：添加布局刷新
+            // 修复：添加布局刷新
             mHandler.postDelayed(mUpdateLayout, 255);
         }
     }
@@ -653,9 +653,9 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
                 channelListPanel.showEpgMode();
                 if (!channelListPanel.isShowing()) {
                     channelListPanel.show();
+                    // 修复：启动时间更新
+                    mHandler.post(tv_sys_timeRunnable);
                 }
-                // 修复1：启动时间更新线程
-                mHandler.post(tv_sys_timeRunnable);
             }
         }
         mHandler.postDelayed(mUpdateLayout, 255);
@@ -669,9 +669,9 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
                 channelListPanel.showChannelMode();
                 if (!channelListPanel.isShowing()) {
                     channelListPanel.show();
+                    // 修复：启动时间更新
+                    mHandler.post(tv_sys_timeRunnable);
                 }
-                // 修复1：启动时间更新线程
-                mHandler.post(tv_sys_timeRunnable);
             }
         }
         mHandler.postDelayed(mUpdateLayout, 255);
@@ -988,7 +988,12 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
                 getEpg(epgDateAdapter.getData().get(position).getDateParamVal());
             }
         });
-        // 修复3：移除重复的 setOnItemClickListener，避免重复触发
+        epgDateAdapter.setOnItemClickListener((adapter, view, position) -> {
+            FastClickCheckUtil.check(view);
+            if (channelListPanel != null) channelListPanel.resetHideTimer();
+            epgDateAdapter.setSelectedIndex(position);
+            getEpg(epgDateAdapter.getData().get(position).getDateParamVal());
+        });
         epgDateAdapter.setSelectedIndex(6);
     }
 
