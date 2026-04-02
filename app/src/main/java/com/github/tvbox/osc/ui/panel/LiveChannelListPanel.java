@@ -72,11 +72,9 @@ public class LiveChannelListPanel {
             int channelIdx = listener.getCurrentChannelIndex();
             if (groupAdapter != null) {
                 groupAdapter.setSelectedGroupIndex(groupIdx);
-                // 不手动设置 focused，让系统事件触发
             }
             if (channelAdapter != null) {
                 channelAdapter.setSelectedChannelIndex(channelIdx);
-                // 不手动设置 focused
             }
             if (groupView.isScrolling() || channelView.isScrolling() ||
                     groupView.isComputingLayout() || channelView.isComputingLayout()) {
@@ -170,11 +168,9 @@ public class LiveChannelListPanel {
     public void updateCurrentSelection(int groupIndex, int channelIndex) {
         if (groupAdapter != null) {
             groupAdapter.setSelectedGroupIndex(groupIndex);
-            // 不手动设置 focused
         }
         if (channelAdapter != null) {
             channelAdapter.setSelectedChannelIndex(channelIndex);
-            // 不手动设置 focused
             if (isShowing) {
                 TvRecyclerView channelView = channelViewRef.get();
                 if (channelView != null) {
@@ -187,15 +183,20 @@ public class LiveChannelListPanel {
         }
     }
 
-    // 修正：切换分组时，频道列表不应保留旧高亮
+    // 修正：点击分组时，若分组为当前播放分组则高亮当前频道，否则清除高亮
     public void loadGroup(int groupIndex, List<LiveChannelGroup> allGroups) {
         if (isEpgMode) showChannelMode();
         if (groupAdapter != null) groupAdapter.setSelectedGroupIndex(groupIndex);
-        // 频道列表清空高亮（-1），不保留之前的频道索引
         if (channelAdapter != null) {
             List<LiveChannelItem> channels = listener != null ? listener.getLiveChannels(groupIndex) : new ArrayList<>();
             channelAdapter.setNewData(channels);
-            channelAdapter.setSelectedChannelIndex(-1);
+            int currentGroup = listener != null ? listener.getCurrentGroupIndex() : -1;
+            int currentChannel = listener != null ? listener.getCurrentChannelIndex() : -1;
+            if (groupIndex == currentGroup && currentChannel >= 0 && currentChannel < channels.size()) {
+                channelAdapter.setSelectedChannelIndex(currentChannel);
+            } else {
+                channelAdapter.setSelectedChannelIndex(-1);
+            }
         }
     }
 
@@ -246,12 +247,11 @@ public class LiveChannelListPanel {
     }
 
     // ========== 显示/隐藏 ==========
-    // 修正：无论何种模式，显示前都刷新全量数据
+    // 显示时强制刷新全量数据，确保界面同步
     public void show() {
         LinearLayout rootView = rootViewRef.get();
         if (rootView == null) return;
 
-        // 刷新全量数据（分组+频道），确保与外部同步
         if (listener != null) {
             refreshFull(listener.getChannelGroups(), listener.getCurrentGroupIndex(), listener.getCurrentChannelIndex());
         }
