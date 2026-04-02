@@ -183,7 +183,6 @@ public class LiveChannelListPanel {
         }
     }
 
-    // 修正：点击分组时，若分组为当前播放分组则高亮当前频道，否则清除高亮
     public void loadGroup(int groupIndex, List<LiveChannelGroup> allGroups) {
         if (isEpgMode) showChannelMode();
         if (groupAdapter != null) groupAdapter.setSelectedGroupIndex(groupIndex);
@@ -216,7 +215,6 @@ public class LiveChannelListPanel {
         setChannelViewsVisible(false);
         if (listener != null) listener.onEpgModeChanged(true);
         resetHideTimer();
-        // 焦点恢复
         TvRecyclerView epgInfo = epgInfoViewRef.get();
         if (epgInfo != null && epgInfo.getVisibility() == View.VISIBLE) {
             handler.postDelayed(() -> epgInfo.requestFocus(), 100);
@@ -247,7 +245,6 @@ public class LiveChannelListPanel {
     }
 
     // ========== 显示/隐藏 ==========
-    // 显示时强制刷新全量数据，确保界面同步
     public void show() {
         LinearLayout rootView = rootViewRef.get();
         if (rootView == null) return;
@@ -387,10 +384,13 @@ public class LiveChannelListPanel {
         });
     }
 
+    // ========== 关键修复 ==========
+    // 使用 groupAdapter.getSelectedGroupIndex() 获取用户当前选中的分组索引
     private void clickChannel(int position) {
         resetHideTimer();
         if (listener == null) return;
-        int groupIndex = listener.getCurrentGroupIndex();
+        // 获取面板中当前选中的分组（用户通过方向键或点击选中的分组）
+        int groupIndex = groupAdapter != null ? groupAdapter.getSelectedGroupIndex() : -1;
         if (groupIndex < 0) return;
         listener.onChannelSelected(groupIndex, position);
         hide();
