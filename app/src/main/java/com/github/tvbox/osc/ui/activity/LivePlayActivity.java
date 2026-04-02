@@ -351,6 +351,14 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
         });
     }
 
+    // 公开方法供 EpgCacheHelper 回调使用（修复错误1）
+    public void getTvLogo(String channelName, String logoUrl) {
+        if (currentLiveChannelItem != null && channelName.equals(currentLiveChannelItem.getChannelName())) {
+            RequestOptions options = new RequestOptions().diskCacheStrategy(DiskCacheStrategy.AUTOMATIC).placeholder(R.drawable.img_logo_placeholder);
+            Glide.with(App.getInstance()).load(logoUrl).apply(options).into(tv_logo);
+        }
+    }
+
     // ========== 生命周期 ==========
     @Override
     protected int getLayoutResID() {
@@ -363,6 +371,12 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
         epgStringAddress = Hawk.get(HawkConfig.EPG_URL, "");
         if (StringUtils.isBlank(epgStringAddress)) epgStringAddress = LiveConstants.DEFAULT_EPG_URL;
         epgCacheHelper = new EpgCacheHelper(this, epgStringAddress);
+        // 注册 Logo 回调（修复错误1）
+        epgCacheHelper.setLogoCallback((channelName, logoUrl) -> {
+            if (currentLiveChannelItem != null && channelName.equals(currentLiveChannelItem.getChannelName())) {
+                getTvLogo(channelName, logoUrl);
+            }
+        });
         EventBus.getDefault().register(this);
         setLoadSir(findViewById(R.id.live_root));
 
@@ -639,7 +653,6 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
             }
             channelListPanel.show();
             mHandler.post(tv_sys_timeRunnable);
-            // 修复：添加布局刷新
             mHandler.postDelayed(mUpdateLayout, 255);
         }
     }
@@ -653,12 +666,11 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
                 channelListPanel.showEpgMode();
                 if (!channelListPanel.isShowing()) {
                     channelListPanel.show();
-                    // 修复：启动时间更新
                     mHandler.post(tv_sys_timeRunnable);
                 }
             }
         }
-        mHandler.postDelayed(mUpdateLayout, 255);
+        mHandler.postDelayed(mUpdateLayout, 255); // 修复错误6
     }
 
     public void divLoadEpgL(View view) {
@@ -669,12 +681,11 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
                 channelListPanel.showChannelMode();
                 if (!channelListPanel.isShowing()) {
                     channelListPanel.show();
-                    // 修复：启动时间更新
                     mHandler.post(tv_sys_timeRunnable);
                 }
             }
         }
-        mHandler.postDelayed(mUpdateLayout, 255);
+        mHandler.postDelayed(mUpdateLayout, 255); // 修复错误6
     }
 
     private void showSettingGroup() {
@@ -701,7 +712,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
         }
         mHandler.removeCallbacks(mHideChannelInfoRun);
         mHandler.postDelayed(mHideChannelInfoRun, LiveConstants.AUTO_HIDE_CHANNEL_INFO_MS);
-        mHandler.postDelayed(mUpdateLayout, 255);
+        mHandler.postDelayed(mUpdateLayout, 255); // 修复错误6
     }
 
     private void toggleChannelInfo() {
@@ -711,6 +722,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
             mBack.setVisibility(View.INVISIBLE);
             mHandler.removeCallbacks(mHideChannelInfoRun);
             mHandler.post(mHideChannelInfoRun);
+            mHandler.postDelayed(mUpdateLayout, 255); // 修复错误6
         }
     }
 
@@ -786,11 +798,6 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
         }
     }
 
-    private void getTvLogo(String channelName, String logoUrl) {
-        RequestOptions options = new RequestOptions().diskCacheStrategy(DiskCacheStrategy.AUTOMATIC).placeholder(R.drawable.img_logo_placeholder);
-        Glide.with(App.getInstance()).load(logoUrl).apply(options).into(tv_logo);
-    }
-
     // ========== 播放控制 ==========
     private boolean playChannel(int channelGroupIndex, int liveChannelIndex, boolean changeSource) {
         isShiyiMode = false;
@@ -843,6 +850,12 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
         mVideoView.setUrl(currentLiveChannelItem.getUrl(), setPlayHeaders(currentLiveChannelItem.getUrl()));
         showChannelInfo();
         mVideoView.start();
+        
+        // 修复错误7：同步设置面板线路索引
+        if (settingsPanel != null && currentLiveChannelItem != null) {
+            settingsPanel.setCurrentSourceIndex(currentLiveChannelItem.getSourceIndex());
+        }
+        
         return true;
     }
 
@@ -1193,6 +1206,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
                 if (!isNeedInputPassword(lastChannelGroupIndex)) {
                     playChannel(lastChannelGroupIndex, lastLiveChannelIndex, false);
                 } else {
+                    // 不修复密码分组高亮错误（用户要求不修复），直接显示列表
                     showChannelList();
                 }
             } else if (!liveChannelGroupList.isEmpty() && !liveChannelGroupList.get(0).getLiveChannels().isEmpty()) {
@@ -1464,6 +1478,10 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
             mVideoView.release();
             mVideoView = null;
         }
+        // 修复错误5：移除所有可能泄漏的 Runnable
+        mHandler.removeCallbacks(tv_sys_timeRunnable);
+        mHandler.removeCallbacks(mUpdateTimeRun);
+        mHandler.removeCallbacks(mUpdateNetSpeedRun);
         if (epgCacheHelper != null) epgCacheHelper.destroy();
         if (settingsPanel != null) settingsPanel.destroy();
         if (channelListPanel != null) channelListPanel.destroy();
