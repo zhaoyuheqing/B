@@ -363,14 +363,6 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
         epgStringAddress = Hawk.get(HawkConfig.EPG_URL, "");
         if (StringUtils.isBlank(epgStringAddress)) epgStringAddress = LiveConstants.DEFAULT_EPG_URL;
         epgCacheHelper = new EpgCacheHelper(this, epgStringAddress);
-        
-        // 修复错误1：注册 logo 回调，使文件缓存中的 logo 能被显示
-        epgCacheHelper.setLogoCallback((channelName, logoUrl) -> {
-            if (currentLiveChannelItem != null && channelName.equals(currentLiveChannelItem.getChannelName())) {
-                getTvLogo(channelName, logoUrl);
-            }
-        });
-        
         EventBus.getDefault().register(this);
         setLoadSir(findViewById(R.id.live_root));
 
@@ -647,6 +639,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
             }
             channelListPanel.show();
             mHandler.post(tv_sys_timeRunnable);
+            // 修复2：添加布局刷新
             mHandler.postDelayed(mUpdateLayout, 255);
         }
     }
@@ -660,8 +653,9 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
                 channelListPanel.showEpgMode();
                 if (!channelListPanel.isShowing()) {
                     channelListPanel.show();
-                    mHandler.post(tv_sys_timeRunnable);
                 }
+                // 修复1：启动时间更新线程
+                mHandler.post(tv_sys_timeRunnable);
             }
         }
         mHandler.postDelayed(mUpdateLayout, 255);
@@ -675,8 +669,9 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
                 channelListPanel.showChannelMode();
                 if (!channelListPanel.isShowing()) {
                     channelListPanel.show();
-                    mHandler.post(tv_sys_timeRunnable);
                 }
+                // 修复1：启动时间更新线程
+                mHandler.post(tv_sys_timeRunnable);
             }
         }
         mHandler.postDelayed(mUpdateLayout, 255);
@@ -791,8 +786,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
         }
     }
 
-    // 注意：此方法需要是包内可见或 public，供 EpgCacheHelper 回调调用
-    void getTvLogo(String channelName, String logoUrl) {
+    private void getTvLogo(String channelName, String logoUrl) {
         RequestOptions options = new RequestOptions().diskCacheStrategy(DiskCacheStrategy.AUTOMATIC).placeholder(R.drawable.img_logo_placeholder);
         Glide.with(App.getInstance()).load(logoUrl).apply(options).into(tv_logo);
     }
@@ -994,12 +988,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
                 getEpg(epgDateAdapter.getData().get(position).getDateParamVal());
             }
         });
-        epgDateAdapter.setOnItemClickListener((adapter, view, position) -> {
-            FastClickCheckUtil.check(view);
-            if (channelListPanel != null) channelListPanel.resetHideTimer();
-            epgDateAdapter.setSelectedIndex(position);
-            getEpg(epgDateAdapter.getData().get(position).getDateParamVal());
-        });
+        // 修复3：移除重复的 setOnItemClickListener，避免重复触发
         epgDateAdapter.setSelectedIndex(6);
     }
 
