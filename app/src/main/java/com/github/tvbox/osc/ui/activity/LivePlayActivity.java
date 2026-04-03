@@ -565,6 +565,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
             if (channelListPanel != null) {
                 channelListPanel.loadGroup(groupIndex, liveChannelGroupList);
             }
+            // 移除了自动播放代码
         }
     }
 
@@ -639,11 +640,10 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
             }
             channelListPanel.show();
             mHandler.post(tv_sys_timeRunnable);
-            // 修复2：添加布局刷新
-            mHandler.postDelayed(mUpdateLayout, 255);
         }
     }
 
+    // 修改 divLoadEpgR 符合原始行为
     public void divLoadEpgR(View view) {
         if (settingsPanel != null && settingsPanel.isShowing()) settingsPanel.hide();
         if (channelListPanel != null) {
@@ -654,13 +654,12 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
                 if (!channelListPanel.isShowing()) {
                     channelListPanel.show();
                 }
-                // 修复1：启动时间更新线程
-                mHandler.post(tv_sys_timeRunnable);
             }
         }
         mHandler.postDelayed(mUpdateLayout, 255);
     }
 
+    // 修改 divLoadEpgL 符合原始行为
     public void divLoadEpgL(View view) {
         if (channelListPanel != null) {
             if (channelListPanel.isShowing() && !channelListPanel.isEpgMode()) {
@@ -670,8 +669,6 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
                 if (!channelListPanel.isShowing()) {
                     channelListPanel.show();
                 }
-                // 修复1：启动时间更新线程
-                mHandler.post(tv_sys_timeRunnable);
             }
         }
         mHandler.postDelayed(mUpdateLayout, 255);
@@ -793,8 +790,10 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
 
     // ========== 播放控制 ==========
     private boolean playChannel(int channelGroupIndex, int liveChannelIndex, boolean changeSource) {
+        // 重置时移模式
         isShiyiMode = false;
         shiyi_time = null;
+        // 清除 EPG 选中状态（时移高亮）
         if (epgListAdapter != null) {
             epgListAdapter.setShiyiSelection(-1, false, null);
         }
@@ -847,8 +846,10 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
     }
 
     private boolean replayChannel() {
+        // 重置时移模式
         isShiyiMode = false;
         shiyi_time = null;
+        // 清除 EPG 选中状态
         if (epgListAdapter != null) {
             epgListAdapter.setShiyiSelection(-1, false, null);
         }
@@ -902,6 +903,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
     }
 
     public void playPreSource() {
+        // 显式重置时移模式（增强健壮性）
         isShiyiMode = false;
         shiyi_time = null;
         if (!isCurrentLiveChannelValid()) {
@@ -927,6 +929,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
         epgListAdapter = new LiveEpgAdapter();
         mEpgInfoGridView.setAdapter(epgListAdapter);
 
+        // 仅保留 OnItemListener 处理点击，避免重复回调
         TvRecyclerView.OnItemListener listener = new TvRecyclerView.OnItemListener() {
             @Override
             public void onItemPreSelected(TvRecyclerView parent, View itemView, int position) {
@@ -947,6 +950,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
             }
         };
         mEpgInfoGridView.setOnItemListener(listener);
+        // 不再设置 setOnItemClickListener
     }
 
     private void initEpgDateView() {
@@ -988,7 +992,12 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
                 getEpg(epgDateAdapter.getData().get(position).getDateParamVal());
             }
         });
-        // 修复3：移除重复的 setOnItemClickListener，避免重复触发
+        epgDateAdapter.setOnItemClickListener((adapter, view, position) -> {
+            FastClickCheckUtil.check(view);
+            if (channelListPanel != null) channelListPanel.resetHideTimer();
+            epgDateAdapter.setSelectedIndex(position);
+            getEpg(epgDateAdapter.getData().get(position).getDateParamVal());
+        });
         epgDateAdapter.setSelectedIndex(6);
     }
 
