@@ -60,6 +60,8 @@ public class LiveChannelListPanel {
     private boolean isEpgMode = false;
 
     private final Runnable hideRunnable = this::hideInternal;
+    
+    // 修复：强制滚动到当前播放频道的 Runnable
     private final Runnable focusCurrentChannelRunnable = new Runnable() {
         private int retryCount = 0;
         private static final int MAX_RETRY = 15;
@@ -103,6 +105,7 @@ public class LiveChannelListPanel {
             retryCount = 0;
         }
     };
+
     private final Runnable focusEpgRunnable = new Runnable() {
         private int retryCount = 0;
         private static final int MAX_RETRY = 10;
@@ -171,7 +174,8 @@ public class LiveChannelListPanel {
         }
         if (channelAdapter != null) {
             channelAdapter.setSelectedChannelIndex(channelIndex);
-            if (isShowing) {
+            // 修复：如果面板正在显示，立即滚动到当前播放频道
+            if (isShowing && !isEpgMode) {
                 TvRecyclerView channelView = channelViewRef.get();
                 if (channelView != null) {
                     channelView.post(() -> {
@@ -193,6 +197,16 @@ public class LiveChannelListPanel {
             int currentChannel = listener != null ? listener.getCurrentChannelIndex() : -1;
             if (groupIndex == currentGroup && currentChannel >= 0 && currentChannel < channels.size()) {
                 channelAdapter.setSelectedChannelIndex(currentChannel);
+                // 修复：如果面板正在显示且当前是频道模式，滚动到当前播放频道
+                if (isShowing && !isEpgMode) {
+                    TvRecyclerView channelView = channelViewRef.get();
+                    if (channelView != null) {
+                        channelView.post(() -> {
+                            channelView.scrollToPosition(currentChannel);
+                            channelView.setSelection(currentChannel);
+                        });
+                    }
+                }
             } else {
                 channelAdapter.setSelectedChannelIndex(-1);
             }
@@ -230,11 +244,17 @@ public class LiveChannelListPanel {
                 listener.onEpgModeChanged(false);
                 refreshFull(listener.getChannelGroups(), listener.getCurrentGroupIndex(), listener.getCurrentChannelIndex());
             }
+            // 修复：切回频道模式后强制滚动到当前播放频道
+            handler.post(focusCurrentChannelRunnable);
         } else {
             setEpgViewsVisible(false);
             setChannelViewsVisible(true);
             if (listener != null) {
                 updateCurrentSelection(listener.getCurrentGroupIndex(), listener.getCurrentChannelIndex());
+            }
+            // 修复：即使模式没变，如果面板正在显示，也重新定位（应对从隐藏后显示的情况）
+            if (isShowing) {
+                handler.post(focusCurrentChannelRunnable);
             }
         }
         resetHideTimer();
@@ -283,6 +303,7 @@ public class LiveChannelListPanel {
                         }
                     });
         } else {
+            // 修复：面板已显示但需要重新定位（例如从其他界面返回，或之前手动滚动过）
             handler.removeCallbacks(focusCurrentChannelRunnable);
             handler.removeCallbacks(focusEpgRunnable);
             if (isEpgMode) {
@@ -384,12 +405,9 @@ public class LiveChannelListPanel {
         });
     }
 
-    // ========== 关键修复 ==========
-    // 使用 groupAdapter.getSelectedGroupIndex() 获取用户当前选中的分组索引
     private void clickChannel(int position) {
         resetHideTimer();
         if (listener == null) return;
-        // 获取面板中当前选中的分组（用户通过方向键或点击选中的分组）
         int groupIndex = groupAdapter != null ? groupAdapter.getSelectedGroupIndex() : -1;
         if (groupIndex < 0) return;
         listener.onChannelSelected(groupIndex, position);
