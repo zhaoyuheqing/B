@@ -60,49 +60,47 @@ public class LiveChannelListPanel {
     private boolean isEpgMode = false;
 
     private final Runnable hideRunnable = this::hideInternal;
+
+    // 修复：强制滚动到当前播放频道的 Runnable（带重试机制）
     private final Runnable focusCurrentChannelRunnable = new Runnable() {
         private int retryCount = 0;
-        private static final int MAX_RETRY = 15;
+        private static final int MAX_RETRY = 12;
+
         @Override
         public void run() {
             TvRecyclerView groupView = groupViewRef.get();
             TvRecyclerView channelView = channelViewRef.get();
             if (groupView == null || channelView == null || listener == null) return;
+
             int groupIdx = listener.getCurrentGroupIndex();
             int channelIdx = listener.getCurrentChannelIndex();
+
+            // 始终强制设置选中索引（高亮）
             if (groupAdapter != null) {
                 groupAdapter.setSelectedGroupIndex(groupIdx);
             }
             if (channelAdapter != null) {
                 channelAdapter.setSelectedChannelIndex(channelIdx);
             }
-            if (groupView.isScrolling() || channelView.isScrolling() ||
-                    groupView.isComputingLayout() || channelView.isComputingLayout()) {
-                if (retryCount++ < MAX_RETRY) {
-                    handler.postDelayed(this, 100);
-                }
-                return;
-            }
-            groupView.scrollToPosition(groupIdx);
-            groupView.setSelection(groupIdx);
+
+            // 关键修复：强制滚动到当前播放的节目，不受 isScrolling() 严格限制
             channelView.post(() -> {
-                channelView.scrollToPosition(channelIdx);
-                channelView.setSelection(channelIdx);
-                RecyclerView.ViewHolder holder = channelView.findViewHolderForAdapterPosition(channelIdx);
-                if (holder != null && holder.itemView != null) {
-                    holder.itemView.requestFocus();
-                } else {
-                    channelView.postDelayed(() -> {
-                        RecyclerView.ViewHolder holder2 = channelView.findViewHolderForAdapterPosition(channelIdx);
-                        if (holder2 != null && holder2.itemView != null) {
-                            holder2.itemView.requestFocus();
-                        }
-                    }, 150);
+                if (channelIdx >= 0 && channelIdx < channelAdapter.getItemCount()) {
+                    channelView.scrollToPosition(channelIdx);
+                    channelView.setSelection(channelIdx);
+
+                    // 如果还在滚动，就延迟重试几次
+                    if (channelView.isScrolling() && retryCount < MAX_RETRY) {
+                        retryCount++;
+                        handler.postDelayed(this, 80);
+                        return;
+                    }
                 }
+                retryCount = 0;
             });
-            retryCount = 0;
         }
     };
+
     private final Runnable focusEpgRunnable = new Runnable() {
         private int retryCount = 0;
         private static final int MAX_RETRY = 10;
@@ -183,29 +181,27 @@ public class LiveChannelListPanel {
         }
     }
 
-    // 修复：分组切换时滚动到顶部或当前频道（对齐原始脚本行为）
+    // 分组切换时的滚动行为（保留之前修复：相同分组滚动到当前频道，不同分组滚动到顶部）
     public void loadGroup(int groupIndex, List<LiveChannelGroup> allGroups) {
         if (isEpgMode) showChannelMode();
         if (groupAdapter != null) groupAdapter.setSelectedGroupIndex(groupIndex);
-        
+
         TvRecyclerView channelView = channelViewRef.get();
         if (channelView == null || channelAdapter == null || listener == null) return;
-        
+
         List<LiveChannelItem> channels = listener.getLiveChannels(groupIndex);
         channelAdapter.setNewData(channels);
-        
+
         int currentGroup = listener.getCurrentGroupIndex();
         int currentChannel = listener.getCurrentChannelIndex();
-        
+
         if (groupIndex == currentGroup && currentChannel >= 0 && currentChannel < channels.size()) {
-            // 相同分组：选中当前播放的频道，并滚动到该位置
             channelAdapter.setSelectedChannelIndex(currentChannel);
             channelView.post(() -> {
                 channelView.scrollToPosition(currentChannel);
                 channelView.setSelection(currentChannel);
             });
         } else {
-            // 不同分组：清除选中，滚动到顶部（原始脚本行为）
             channelAdapter.setSelectedChannelIndex(-1);
             channelView.post(() -> channelView.scrollToPosition(0));
         }
@@ -262,15 +258,9 @@ public class LiveChannelListPanel {
         if (rootView == null) return;
 
         if (listener != null) {
-            refreshFull(listener.getChannelGroups(), listener.getCurrentGroupIndex(), listener.getCurrentChannelIndex());
-        }
-
-        if (isEpgMode) {
-            setEpgViewsVisible(true);
-            setChannelViewsVisible(false);
-        } else {
-            setEpgViewsVisible(false);
-            setChannelViewsVisible(true);
+            refreshFull(listener.getChannelGroups(),
+                        listener.getCurrentGroupIndex(),
+                        listener.getCurrentChannelIndex());
         }
 
         if (rootView.getVisibility() != View.VISIBLE) {
@@ -286,23 +276,14 @@ public class LiveChannelListPanel {
                         @Override
                         public void onAnimationEnd(Animator animation) {
                             handler.removeCallbacks(focusCurrentChannelRunnable);
-                            handler.removeCallbacks(focusEpgRunnable);
-                            if (isEpgMode) {
-                                handler.postDelayed(focusEpgRunnable, 300);
-                            } else {
-                                handler.post(focusCurrentChannelRunnable);
-                            }
+                            handler.post(focusCurrentChannelRunnable);   // 强制执行
                         }
                     });
         } else {
             handler.removeCallbacks(focusCurrentChannelRunnable);
-            handler.removeCallbacks(focusEpgRunnable);
-            if (isEpgMode) {
-                handler.postDelayed(focusEpgRunnable, 300);
-            } else {
-                handler.post(focusCurrentChannelRunnable);
-            }
+            handler.post(focusCurrentChannelRunnable);   // 已经显示时也强制执行
         }
+
         isShowing = true;
         resetHideTimer();
     }
