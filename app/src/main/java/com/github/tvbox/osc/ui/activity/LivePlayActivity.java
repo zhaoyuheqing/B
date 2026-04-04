@@ -840,7 +840,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
                 channelListPanel.updateCurrentSelection(currentChannelGroupIndex, currentLiveChannelIndex);
             }
         } else {
-            // 修复错误7：换源后同步设置面板的线路索引
+            // 修复：换源后同步设置面板的线路索引
             if (settingsPanel != null && currentLiveChannelItem != null) {
                 settingsPanel.setCurrentSourceIndex(currentLiveChannelItem.getSourceIndex());
             }
@@ -963,7 +963,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
         };
         mEpgInfoGridView.setOnItemListener(listener);
         
-        // 修复：EPG 节目列表滚动重置计时器
+        // EPG 节目列表滚动重置计时器
         mEpgInfoGridView.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
             public void onScrollStateChanged(@NonNull RecyclerView recyclerView, int newState) {
@@ -1021,7 +1021,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
         });
         epgDateAdapter.setSelectedIndex(6);
         
-        // 修复：EPG 日期列表滚动重置计时器
+        // EPG 日期列表滚动重置计时器
         mEpgDateGridView.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
             public void onScrollStateChanged(@NonNull RecyclerView recyclerView, int newState) {
@@ -1037,10 +1037,32 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
         controller.setListener(new LiveController.LiveControlListener() {
             @Override
             public boolean singleTap(MotionEvent e) {
+                // 检查各面板是否显示
+                boolean leftShowing = (channelListPanel != null && channelListPanel.isShowing());
+                boolean bottomShowing = (tvBottomLayout.getVisibility() == View.VISIBLE);
+                boolean rightShowing = (settingsPanel != null && settingsPanel.isShowing());
+
+                // 如果有任意面板显示，则隐藏所有显示的面板，不触发其他动作
+                if (leftShowing || bottomShowing || rightShowing) {
+                    if (leftShowing) channelListPanel.hide();
+                    if (bottomShowing) {
+                        mHandler.removeCallbacks(mHideChannelInfoRun);
+                        mHandler.post(mHideChannelInfoRun);
+                    }
+                    if (rightShowing) settingsPanel.hide();
+                    return true;
+                }
+
+                // 无面板显示时，执行原始分区逻辑
                 int fiveScreen = PlayerUtils.getScreenWidth(mContext, true) / 5;
-                if (e.getX() > 0 && e.getX() < (fiveScreen * 2)) showChannelList();
-                else if ((e.getX() > (fiveScreen * 2)) && (e.getX() < (fiveScreen * 3))) toggleChannelInfo();
-                else if (e.getX() > (fiveScreen * 3)) showSettingGroup();
+                float x = e.getX();
+                if (x > 0 && x < (fiveScreen * 2)) {
+                    showChannelList();
+                } else if ((x > (fiveScreen * 2)) && (x < (fiveScreen * 3))) {
+                    toggleChannelInfo();
+                } else if (x > (fiveScreen * 3)) {
+                    showSettingGroup();
+                }
                 return true;
             }
             @Override
@@ -1319,7 +1341,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
             public void onCancel() {
                 if (channelListPanel != null) {
                     channelListPanel.refreshFull(liveChannelGroupList, currentChannelGroupIndex, currentLiveChannelIndex);
-                    channelListPanel.resetHideTimer();   // 修复：取消密码对话框时重置计时器
+                    channelListPanel.resetHideTimer();
                 }
             }
         });
@@ -1503,7 +1525,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
         if (epgCacheHelper != null) epgCacheHelper.destroy();
         if (settingsPanel != null) settingsPanel.destroy();
         if (channelListPanel != null) channelListPanel.destroy();
-        // 修复：移除所有可能泄漏的 Runnable
+        // 移除所有可能泄漏的 Runnable
         mHandler.removeCallbacks(tv_sys_timeRunnable);
         mHandler.removeCallbacks(mUpdateTimeRun);
         mHandler.removeCallbacks(mUpdateNetSpeedRun);
