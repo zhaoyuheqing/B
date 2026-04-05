@@ -43,7 +43,7 @@ public class LivePlaybackManager {
     private PlaybackListener listener;
 
     private final Runnable timeoutChangeSourceRun = this::handleTimeoutChangeSource;
-    private final Runnable timeoutReplayRun = this::replayChannel;
+    private final Runnable timeoutReplayRun = this::replayChannel;  // 引用 replayChannel 方法
 
     public interface PlaybackListener {
         boolean onSingleTap(MotionEvent e);
@@ -100,7 +100,7 @@ public class LivePlaybackManager {
         videoView.setVideoController(controller);
         videoView.setProgressManager(null);
 
-        // 关键修复：恢复用户保存的缩放和解码偏好（与原脚本一致）
+        // 恢复用户保存的缩放和解码偏好（与原脚本一致）
         playerManager.init(videoView);
         this.currentScale = playerManager.getLivePlayerScale();
         this.currentPlayerType = playerManager.getLivePlayerType();
@@ -213,7 +213,12 @@ public class LivePlaybackManager {
         playChannel(currentChannel, true);
     }
 
-    // 注意：replayChannel 已移至 Activity 中实现，此处不再保留方法
+    // 超时重试时使用的重放方法（不重新获取频道，直接重放当前频道）
+    public void replayChannel() {
+        if (currentChannel == null) return;
+        resetShiyiMode();
+        playChannel(currentChannel, false);
+    }
 
     public void resetShiyiMode() {
         isShiyiMode = false;
