@@ -37,6 +37,8 @@ public class LivePlaybackManager {
     private boolean isShiyiMode = false;
     private String shiyiTime = null;
     private int currentChangeSourceTimes = 0;
+    private int currentScale = 0;
+    private int currentPlayerType = 0;
 
     private PlaybackListener listener;
 
@@ -50,8 +52,8 @@ public class LivePlaybackManager {
         void onVideoSizeChanged(int width, int height);
         void onChannelInfoUpdate(LiveChannelItem channel);
         void onShiyiModeChanged(boolean isShiyi, String timeRange);
-        void onNeedShowBottomEpg();           // 仅刷新底部节目信息
-        void onShowChannelInfo();             // 显示底部栏 + 重置自动隐藏（单源换源使用）
+        void onNeedShowBottomEpg();
+        void onShowChannelInfo();
         void onAutoSwitchToNextChannel();
     }
 
@@ -101,7 +103,6 @@ public class LivePlaybackManager {
         playerManager.init(videoView);
     }
 
-    // ========== 播放状态处理 ==========
     private void handlePlayState(int playState) {
         if (currentChannel == null) return;
 
@@ -114,12 +115,10 @@ public class LivePlaybackManager {
                     if (size.length >= 2) listener.onVideoSizeChanged(size[0], size[1]);
                 }
                 break;
-
             case VideoView.STATE_BUFFERED:
             case VideoView.STATE_PLAYING:
                 cancelAllTimeouts();
                 break;
-
             case VideoView.STATE_BUFFERING:
             case VideoView.STATE_PREPARING:
             case VideoView.STATE_ERROR:
@@ -156,7 +155,6 @@ public class LivePlaybackManager {
     }
 
     // ====================== 公开 API ======================
-
     public void setListener(PlaybackListener listener) {
         this.listener = listener;
     }
@@ -164,12 +162,10 @@ public class LivePlaybackManager {
     public void playChannel(LiveChannelItem channel, boolean isChangeSource) {
         if (channel == null) return;
 
-        // 单源时：只显示底部栏 + 刷新信息，不重新加载流（与原脚本完全一致）
         if (isChangeSource && channel.getSourceNum() == 1) {
             if (listener != null) {
-                listener.onChannelInfoUpdate(channel);   // 更新频道名、线路号
-                listener.onShowChannelInfo();            // 显示底部栏并重置自动隐藏计时器
-                // 注意：不调用 onNeedShowBottomEpg()，因为底部栏已经由 onShowChannelInfo 显示了
+                listener.onChannelInfoUpdate(channel);
+                listener.onShowChannelInfo();
             }
             return;
         }
@@ -181,7 +177,7 @@ public class LivePlaybackManager {
 
         if (listener != null) {
             listener.onChannelInfoUpdate(channel);
-            listener.onNeedShowBottomEpg();   // 正常换源/换台时刷新底部节目信息（但不主动显示底部栏）
+            listener.onNeedShowBottomEpg();
         }
 
         videoView.setUrl(channel.getUrl(), buildPlayHeaders(channel.getUrl()));
@@ -352,17 +348,25 @@ public class LivePlaybackManager {
         return currentChannel;
     }
 
-    // ========== 设置功能（画面比例 / 解码方式）==========
+    public int getCurrentScale() {
+        return currentScale;
+    }
+
+    public int getCurrentPlayerType() {
+        return currentPlayerType;
+    }
+
     public void changeScale(int scaleIndex) {
         if (videoView != null && currentChannel != null) {
             playerManager.changeLivePlayerScale(videoView, scaleIndex, currentChannel.getChannelName());
+            this.currentScale = scaleIndex;
         }
     }
 
     public void changePlayerType(int typeIndex) {
         if (videoView == null || currentChannel == null) return;
         playerManager.changeLivePlayerType(videoView, typeIndex, currentChannel.getChannelName());
-        // 重新加载当前流使解码器生效
+        this.currentPlayerType = typeIndex;
         String url = currentChannel.getUrl();
         videoView.release();
         videoView.setUrl(url, buildPlayHeaders(url));
