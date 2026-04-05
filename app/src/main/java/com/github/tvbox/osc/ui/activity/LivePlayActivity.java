@@ -35,7 +35,7 @@ import com.github.tvbox.osc.bean.LiveChannelItem;
 import com.github.tvbox.osc.bean.LiveEpgDate;
 import com.github.tvbox.osc.constant.LiveConstants;
 import com.github.tvbox.osc.event.RefreshEvent;
-import com.github.tvbox.osc.player.controller.LivePlaybackManager;;
+import com.github.tvbox.osc.player.controller.LivePlaybackManager;
 import com.github.tvbox.osc.ui.adapter.ApiHistoryDialogAdapter;
 import com.github.tvbox.osc.ui.adapter.LiveEpgAdapter;
 import com.github.tvbox.osc.ui.adapter.LiveEpgDateAdapter;
@@ -357,15 +357,11 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
             }
             @Override
             public void onScaleChanged(int scaleIndex) {
-                if (playbackManager != null) {
-                    playbackManager.changeScale(scaleIndex);
-                }
+                if (playbackManager != null) playbackManager.changeScale(scaleIndex);
             }
             @Override
             public void onPlayerTypeChanged(int typeIndex) {
-                if (playbackManager != null) {
-                    playbackManager.changePlayerType(typeIndex);
-                }
+                if (playbackManager != null) playbackManager.changePlayerType(typeIndex);
             }
             @Override
             public void onTimeoutChanged(int timeoutIndex) {
@@ -721,14 +717,12 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
 
     // ========== 播放控制 ==========
     private boolean playChannel(int channelGroupIndex, int liveChannelIndex, boolean changeSource) {
-        // 重置时移模式（Manager 内部会重置，但 Activity 也需要重置 EPG 显示）
         isShiyiMode = false;
         shiyi_time = null;
         if (epgListAdapter != null) {
             epgListAdapter.setShiyiSelection(-1, false, null);
         }
 
-        // 修复 EPG 日期重置：正常切换频道时重置为“今天”
         if (!changeSource && epgDateAdapter != null) {
             epgDateAdapter.setSelectedIndex(6);
         }
@@ -767,10 +761,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
             }
         }
 
-        // 委托给播放管理器
         playbackManager.playChannel(currentLiveChannelItem, changeSource);
-
-        // UI 更新（部分已由回调处理，但还需要手动触发 EPG 等）
         getEpg(new Date());
         showBottomEpg();
 
@@ -842,7 +833,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
             }
         };
         mEpgInfoGridView.setOnItemListener(listener);
-        
+
         mEpgInfoGridView.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
             public void onScrollStateChanged(@NonNull RecyclerView recyclerView, int newState) {
@@ -899,7 +890,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
             getEpg(epgDateAdapter.getData().get(position).getDateParamVal());
         });
         epgDateAdapter.setSelectedIndex(6);
-        
+
         mEpgDateGridView.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
             public void onScrollStateChanged(@NonNull RecyclerView recyclerView, int newState) {
@@ -1165,9 +1156,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
     private void resetShiyiMode() {
         isShiyiMode = false;
         shiyi_time = null;
-        if (playbackManager != null) {
-            playbackManager.resetShiyiMode();
-        }
+        if (playbackManager != null) playbackManager.resetShiyiMode();
     }
 
     // ========== 新增辅助方法 ==========
@@ -1340,7 +1329,6 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
     public void onPictureInPictureModeChanged(boolean isInPictureInPictureMode) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode);
         if (supportsPiPMode() && !isInPictureInPictureMode() && onStopCalled) {
-            // 这里不要 release，只需要暂停即可，release 放在 onDestroy
             if (playbackManager != null) playbackManager.pause();
         }
     }
