@@ -131,9 +131,6 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
     private LiveSettingsPanel settingsPanel;
     private LiveChannelListPanel channelListPanel;
 
-    private boolean isShiyiMode = false;
-    private static String shiyi_time;
-
     boolean mIsDragging;
     boolean isVOD = false;
     boolean PiPON = Hawk.get(HawkConfig.BACKGROUND_PLAY_TYPE, 0) == 2;
@@ -301,8 +298,16 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
 
             @Override
             public void onShiyiModeChanged(boolean isShiyi, String timeRange) {
-                isShiyiMode = isShiyi;
-                shiyi_time = timeRange;
+                // 刷新底部信息
+                showBottomEpg();
+                // 关键修复：刷新左侧EPG面板，确保“回看/直播中/预约”标签正确显示
+                if (channelListPanel != null) {
+                    channelListPanel.refreshFull(liveChannelGroupList, currentChannelGroupIndex, currentLiveChannelIndex);
+                }
+                // 如果当前是EPG模式，重新加载当前日期的EPG数据
+                if (channelListPanel != null && channelListPanel.isEpgMode()) {
+                    getEpg(new Date());
+                }
             }
 
             @Override
@@ -542,6 +547,8 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
             }
             String shiyiRange = shiyiStartdate + "-" + shiyiEnddate;
             playbackManager.playShiyi(shiyiRange);
+            // 立即刷新底部信息（时移模式下底部会隐藏）
+            showBottomEpg();
             epgListAdapter.setShiyiSelection(position, true, timeFormat.format(date));
             epgListAdapter.notifyDataSetChanged();
             mEpgInfoGridView.setSelectedPosition(position);
@@ -668,7 +675,10 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
     }
 
     private void showBottomEpg() {
-        if (isShiyiMode) return;
+        // 关键修复：完全依赖 Manager 的时移状态
+        if (playbackManager != null && playbackManager.isShiyiMode()) {
+            return;
+        }
         if (currentLiveChannelItem == null || currentLiveChannelItem.getChannelName() == null) {
             tv_curr_name.setText(LiveConstants.NO_PROGRAM);
             tv_next_name.setText("");
@@ -717,8 +727,10 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
 
     // ========== 播放控制 ==========
     private boolean playChannel(int channelGroupIndex, int liveChannelIndex, boolean changeSource) {
-        isShiyiMode = false;
-        shiyi_time = null;
+        // 重置时移模式（通过 Manager）
+        if (playbackManager != null && playbackManager.isShiyiMode()) {
+            resetShiyiMode();
+        }
         if (epgListAdapter != null) {
             epgListAdapter.setShiyiSelection(-1, false, null);
         }
@@ -1154,9 +1166,10 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
     }
 
     private void resetShiyiMode() {
-        isShiyiMode = false;
-        shiyi_time = null;
-        if (playbackManager != null) playbackManager.resetShiyiMode();
+        if (playbackManager != null) {
+            playbackManager.resetShiyiMode();
+        }
+        showBottomEpg();
     }
 
     // ========== 新增辅助方法 ==========
