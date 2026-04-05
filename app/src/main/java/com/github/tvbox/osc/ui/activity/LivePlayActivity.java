@@ -298,21 +298,24 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
 
             @Override
             public void onShiyiModeChanged(boolean isShiyi, String timeRange) {
-                // 刷新底部信息
+                // 时移模式变化时刷新底部信息（时移模式下底部信息应隐藏）
                 showBottomEpg();
-                // 关键修复：刷新左侧EPG面板，确保“回看/直播中/预约”标签正确显示
+                // 刷新左侧 EPG 面板（确保回看/直播中/预约标签正确）
                 if (channelListPanel != null) {
                     channelListPanel.refreshFull(liveChannelGroupList, currentChannelGroupIndex, currentLiveChannelIndex);
-                }
-                // 如果当前是EPG模式，重新加载当前日期的EPG数据
-                if (channelListPanel != null && channelListPanel.isEpgMode()) {
-                    getEpg(new Date());
                 }
             }
 
             @Override
             public void onNeedShowBottomEpg() {
+                // 正常播放时刷新底部节目信息（但不主动显示底部栏）
                 showBottomEpg();
+            }
+
+            @Override
+            public void onShowChannelInfo() {
+                // 单源换源时显示底部栏（包含动画）并重置自动隐藏计时器
+                showChannelInfo();
             }
 
             @Override
@@ -547,7 +550,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
             }
             String shiyiRange = shiyiStartdate + "-" + shiyiEnddate;
             playbackManager.playShiyi(shiyiRange);
-            // 立即刷新底部信息（时移模式下底部会隐藏）
+            // 时移模式下立即刷新底部信息（隐藏）
             showBottomEpg();
             epgListAdapter.setShiyiSelection(position, true, timeFormat.format(date));
             epgListAdapter.notifyDataSetChanged();
@@ -750,6 +753,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
         }
         if ((channelGroupIndex == currentChannelGroupIndex && liveChannelIndex == currentLiveChannelIndex && !changeSource)
                 || (changeSource && currentLiveChannelItem != null && currentLiveChannelItem.getSourceNum() == 1)) {
+            // 单源或相同频道：只显示信息（Manager 内部已处理，这里不再重复调用）
             showChannelInfo();
             return true;
         }
@@ -774,6 +778,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
         }
 
         playbackManager.playChannel(currentLiveChannelItem, changeSource);
+        // 确保 EPG 数据被立即刷新（关键：修复左侧标签消失）
         getEpg(new Date());
         showBottomEpg();
 
