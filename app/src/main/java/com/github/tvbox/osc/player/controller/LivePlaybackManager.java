@@ -162,6 +162,16 @@ public class LivePlaybackManager {
 
     public void playChannel(LiveChannelItem channel, boolean isChangeSource) {
         if (channel == null) return;
+
+        // 单源时只显示信息，不重新播放（与原脚本一致）
+        if (isChangeSource && channel.getSourceNum() == 1) {
+            if (listener != null) {
+                listener.onChannelInfoUpdate(channel);
+                listener.onNeedShowBottomEpg();
+            }
+            return;
+        }
+
         resetShiyiMode();
         if (videoView != null) videoView.release();
         currentChannel = channel;
@@ -341,27 +351,16 @@ public class LivePlaybackManager {
     }
 
     // ========== 设置功能（画面比例 / 解码方式）==========
-    /**
-     * 切换画面比例
-     * @param scaleIndex 比例索引（0:默认,1:16:9,2:4:3,3:填充,4:原始,5:裁剪）
-     */
     public void changeScale(int scaleIndex) {
         if (videoView != null && currentChannel != null) {
             playerManager.changeLivePlayerScale(videoView, scaleIndex, currentChannel.getChannelName());
         }
     }
 
-    /**
-     * 切换解码方式（修复：重新加载当前流使解码器生效）
-     * @param typeIndex 类型索引（0:系统,1:ijk硬解,2:ijk软解,3:exo）
-     */
     public void changePlayerType(int typeIndex) {
         if (videoView == null || currentChannel == null) return;
-        
-        // 通知 PlayerManager 更改解码器类型
         playerManager.changeLivePlayerType(videoView, typeIndex, currentChannel.getChannelName());
-        
-        // 重新加载当前频道（使新解码器生效）
+        // 重新加载当前流使解码器生效
         String url = currentChannel.getUrl();
         videoView.release();
         videoView.setUrl(url, buildPlayHeaders(url));
