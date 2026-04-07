@@ -61,7 +61,6 @@ public class LiveChannelListPanel {
 
     private final Runnable hideRunnable = this::hideInternal;
 
-    // 修改后的 focusCurrentChannelRunnable：强制滚动到当前播放频道
     private final Runnable focusCurrentChannelRunnable = new Runnable() {
         private int retryCount = 0;
         private static final int MAX_RETRY = 12;
@@ -75,7 +74,6 @@ public class LiveChannelListPanel {
             int groupIdx = listener.getCurrentGroupIndex();
             int channelIdx = listener.getCurrentChannelIndex();
 
-            // 始终强制设置选中索引（高亮）
             if (groupAdapter != null) {
                 groupAdapter.setSelectedGroupIndex(groupIdx);
             }
@@ -83,13 +81,11 @@ public class LiveChannelListPanel {
                 channelAdapter.setSelectedChannelIndex(channelIdx);
             }
 
-            // 强制滚动到当前播放的节目，使用 post + 延迟重试
             channelView.post(() -> {
                 if (channelIdx >= 0 && channelIdx < channelAdapter.getItemCount()) {
                     channelView.scrollToPosition(channelIdx);
                     channelView.setSelection(channelIdx);
 
-                    // 如果还在滚动，就延迟重试几次
                     if (channelView.isScrolling() && retryCount < MAX_RETRY) {
                         retryCount++;
                         handler.postDelayed(this, 80);
@@ -163,6 +159,21 @@ public class LiveChannelListPanel {
         }
     }
 
+    /**
+     * 仅刷新频道列表（不刷新分组），用于性能优化
+     */
+    public void refreshChannelsOnly() {
+        if (listener == null || channelAdapter == null) return;
+        int groupIdx = listener.getCurrentGroupIndex();
+        List<LiveChannelItem> channels = listener.getLiveChannels(groupIdx);
+        channelAdapter.setNewData(channels);
+        channelAdapter.setSelectedChannelIndex(listener.getCurrentChannelIndex());
+        TvRecyclerView channelView = channelViewRef.get();
+        if (channelView != null) {
+            channelView.post(() -> channelView.scrollToPosition(listener.getCurrentChannelIndex()));
+        }
+    }
+
     public void updateCurrentSelection(int groupIndex, int channelIndex) {
         if (groupAdapter != null) {
             groupAdapter.setSelectedGroupIndex(groupIndex);
@@ -230,7 +241,6 @@ public class LiveChannelListPanel {
             setEpgViewsVisible(false);
             setChannelViewsVisible(true);
             if (listener != null) {
-                listener.onEpgModeChanged(false);
                 refreshFull(listener.getChannelGroups(), listener.getCurrentGroupIndex(), listener.getCurrentChannelIndex());
             }
         } else {
@@ -253,7 +263,12 @@ public class LiveChannelListPanel {
         if (rootView == null) return;
 
         if (listener != null) {
-            refreshFull(listener.getChannelGroups(), listener.getCurrentGroupIndex(), listener.getCurrentChannelIndex());
+            // 只刷新频道列表，不刷新分组（性能优化）
+            refreshChannelsOnly();
+            // 确保分组高亮正确（分组数据通常不变，只更新高亮）
+            if (groupAdapter != null) {
+                groupAdapter.setSelectedGroupIndex(listener.getCurrentGroupIndex());
+            }
         }
 
         if (isEpgMode) {
@@ -277,12 +292,12 @@ public class LiveChannelListPanel {
                         @Override
                         public void onAnimationEnd(Animator animation) {
                             handler.removeCallbacks(focusCurrentChannelRunnable);
-                            handler.post(focusCurrentChannelRunnable);   // 强制执行
+                            handler.post(focusCurrentChannelRunnable);
                         }
                     });
         } else {
             handler.removeCallbacks(focusCurrentChannelRunnable);
-            handler.post(focusCurrentChannelRunnable);   // 已经显示时也强制执行
+            handler.post(focusCurrentChannelRunnable);
         }
 
         isShowing = true;
@@ -348,7 +363,6 @@ public class LiveChannelListPanel {
             resetHideTimer();
             if (listener != null) listener.onGroupSelected(position);
         });
-        // 滚动重置计时器
         groupView.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
             public void onScrollStateChanged(@NonNull RecyclerView recyclerView, int newState) {
@@ -378,7 +392,6 @@ public class LiveChannelListPanel {
             public void onItemClick(TvRecyclerView parent, View itemView, int position) { clickChannel(position); }
         });
         channelAdapter.setOnItemClickListener((adapter, view, position) -> { FastClickCheckUtil.check(view); clickChannel(position); });
-        // 滚动重置计时器
         channelView.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
             public void onScrollStateChanged(@NonNull RecyclerView recyclerView, int newState) {
