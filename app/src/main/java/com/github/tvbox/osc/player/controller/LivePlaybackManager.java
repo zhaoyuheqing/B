@@ -119,7 +119,7 @@ public class LivePlaybackManager {
             case VideoView.STATE_BUFFERED:
             case VideoView.STATE_PLAYING:
                 cancelAllTimeouts();
-                currentChangeSourceTimes = 0;   // 修复：重置超时计数器
+                currentChangeSourceTimes = 0;
                 break;
             case VideoView.STATE_BUFFERING:
             case VideoView.STATE_PREPARING:
@@ -161,24 +161,20 @@ public class LivePlaybackManager {
 
     private void handleTimeoutReplay() {
         if (currentChannel == null) return;
-        if (listener != null) {
-            listener.onTimeoutReplay();
-        }
+        if (listener != null) listener.onTimeoutReplay();
     }
 
-    // ====================== 公开 API ======================
     public void setListener(PlaybackListener listener) {
         this.listener = listener;
     }
 
+    // ========== 核心修复：播放频道时同步该频道的记忆值 ==========
     public void playChannel(LiveChannelItem channel, boolean isChangeSource) {
         if (channel == null) return;
         if (videoView == null) return;
 
         if (isChangeSource && channel.getSourceNum() == 1) {
-            if (listener != null) {
-                listener.onCurrentChannelChanged(channel, true);
-            }
+            if (listener != null) listener.onCurrentChannelChanged(channel, true);
             return;
         }
 
@@ -189,13 +185,16 @@ public class LivePlaybackManager {
         currentChannel.setinclude_back(
             currentChannel.getUrl().indexOf(LiveConstants.PLTV_FLAG + "8888") != -1);
 
+        // 加载该频道单独记忆的 scale / playerType
         playerManager.getLiveChannelPlayer(videoView, channel.getChannelName());
+        // 立即同步当前频道的记忆值（修复右侧面板显示上一个频道的值）
+        this.currentScale = playerManager.getLivePlayerScale();
+        this.currentPlayerType = playerManager.getLivePlayerType();
+
         videoView.setUrl(channel.getUrl(), buildPlayHeaders(channel.getUrl()));
         videoView.start();
 
-        if (listener != null) {
-            listener.onCurrentChannelChanged(channel, isChangeSource);
-        }
+        if (listener != null) listener.onCurrentChannelChanged(channel, isChangeSource);
     }
 
     public void playShiyi(String shiyiTimeRange) {
@@ -232,7 +231,7 @@ public class LivePlaybackManager {
         if (listener != null) listener.onShiyiModeChanged(false, null);
     }
 
-    // ====================== 时移工具方法 ======================
+    // ========== 时移工具方法 ==========
     public String[] buildShiyiUrls(String originalUrl, String shiyiTime) {
         String[] result = new String[2];
         String separator = originalUrl.contains("?") ? "&" : "?";
@@ -307,66 +306,21 @@ public class LivePlaybackManager {
         return header;
     }
 
-    // ====================== 播放器查询与控制 ======================
-    public void seekTo(int position) {
-        if (videoView != null) videoView.seekTo(position);
-    }
+    // ========== 播放器查询与控制 ==========
+    public void seekTo(int position) { if (videoView != null) videoView.seekTo(position); }
+    public long getCurrentPosition() { return videoView != null ? videoView.getCurrentPosition() : 0; }
+    public long getDuration() { return videoView != null ? videoView.getDuration() : 0; }
+    public int[] getVideoSize() { return videoView != null ? videoView.getVideoSize() : new int[]{0, 0}; }
+    public float getTcpSpeed() { return videoView != null ? videoView.getTcpSpeed() : 0; }
+    public void pause() { if (videoView != null) videoView.pause(); }
+    public void resume() { if (videoView != null) videoView.resume(); }
+    public void release() { cancelAllTimeouts(); if (videoView != null) { videoView.release(); videoView = null; } contextRef.clear(); listener = null; }
+    public boolean isShiyiMode() { return isShiyiMode; }
+    public String getShiyiTime() { return shiyiTime; }
+    public LiveChannelItem getCurrentChannel() { return currentChannel; }
+    public int getCurrentScale() { return currentScale; }
+    public int getCurrentPlayerType() { return currentPlayerType; }
 
-    public long getCurrentPosition() {
-        return videoView != null ? videoView.getCurrentPosition() : 0;
-    }
-
-    public long getDuration() {
-        return videoView != null ? videoView.getDuration() : 0;
-    }
-
-    public int[] getVideoSize() {
-        return videoView != null ? videoView.getVideoSize() : new int[]{0, 0};
-    }
-
-    public float getTcpSpeed() {
-        return videoView != null ? videoView.getTcpSpeed() : 0;
-    }
-
-    public void pause() {
-        if (videoView != null) videoView.pause();
-    }
-
-    public void resume() {
-        if (videoView != null) videoView.resume();
-    }
-
-    public void release() {
-        cancelAllTimeouts();
-        if (videoView != null) {
-            videoView.release();
-            videoView = null;
-        }
-        contextRef.clear();
-        listener = null;
-    }
-
-    public boolean isShiyiMode() {
-        return isShiyiMode;
-    }
-
-    public String getShiyiTime() {
-        return shiyiTime;
-    }
-
-    public LiveChannelItem getCurrentChannel() {
-        return currentChannel;
-    }
-
-    public int getCurrentScale() {
-        return currentScale;
-    }
-
-    public int getCurrentPlayerType() {
-        return currentPlayerType;
-    }
-
-    // ========== 设置功能 ==========
     public void changeScale(int scaleIndex) {
         if (videoView != null && currentChannel != null) {
             playerManager.changeLivePlayerScale(videoView, scaleIndex, currentChannel.getChannelName());
