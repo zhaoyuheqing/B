@@ -303,20 +303,16 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
                 updateChannelUI(channel);
 
                 if (!isChangeSource) {
-                    // 切台：更新列表面板高亮（索引已在 Activity 的 playChannel 中设置好）
                     if (channelListPanel != null) {
                         channelListPanel.updateCurrentSelection(currentChannelGroupIndex, currentLiveChannelIndex);
                     }
-                } else {
-                    // 换源：只刷新设置面板，不改变频道索引，也不更新左侧高亮（原脚本换源后左侧选中不变）
-                    // 如果左侧列表高亮随线路变化而改变会让人困惑，所以不更新。
                 }
+                // 换源时不更新左侧高亮，也不改变 currentLiveChannelIndex
                 showChannelInfo();
             }
 
             @Override
             public void onAutoSwitchToNextChannel(boolean reverse) {
-                // 超时自动切台，静默执行（无 Toast）
                 if (reverse) {
                     playPreviousSilent();
                 } else {
@@ -326,14 +322,12 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
 
             @Override
             public void onTimeoutReplay() {
-                // 超时重放：重新获取当前频道的最新对象
                 replayChannel();
             }
 
             @Override
             public void onShiyiModeChanged(boolean isShiyi, String timeRange) {
                 showBottomEpg();
-                // 不调用 notifyDataSetChanged，避免不必要的刷新
             }
         });
 
@@ -678,7 +672,6 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
                 epgListAdapter.CanBack(currentLiveChannelItem.getinclude_back());
             }
             epgListAdapter.setNewData(epgdata);
-            // 选中当前正在播放的节目（从后往前找第一个 now >= start 的节目）
             int i = -1;
             Date now = new Date();
             for (int size = epgdata.size() - 1; size >= 0; size--) {
@@ -705,7 +698,6 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
     }
 
     private void showBottomEpg() {
-        // 时移模式直接返回，不更新任何 UI
         if (playbackManager != null && playbackManager.isShiyiMode()) {
             return;
         }
@@ -725,7 +717,6 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
         ArrayList<Epginfo> currentEpgData = epgCacheHelper.getCachedEpg(channelName, dateStr);
 
         if (currentEpgData != null && !currentEpgData.isEmpty()) {
-            // 更新底部当前/下一个节目信息
             Date now = new Date();
             boolean found = false;
             for (int size = currentEpgData.size() - 1; size >= 0; size--) {
@@ -750,7 +741,6 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
                 tv_next_name.setText("");
             }
 
-            // 刷新左侧 EPG 列表（关键：让适配器用最新的 now 重新判断每个节目的状态）
             epgdata = currentEpgData;
             if (epgListAdapter != null) {
                 if (currentLiveChannelItem != null) {
@@ -811,11 +801,9 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
                 channelListPanel.updateCurrentSelection(currentChannelGroupIndex, currentLiveChannelIndex);
             }
         } else {
-            // 换源时，索引不变，但需要更新当前频道对象（可能线路切换后 URL 变了）
-            if (liveChannelIndex >= 0 && liveChannelIndex < channels.size()) {
-                currentLiveChannelItem = channels.get(liveChannelIndex);
-            }
-            // 换源分支也需要同步设置面板的线路索引（已在回调中处理）
+            // 修复：换源时不需要重新获取 currentLiveChannelItem，原对象不变，只需更新线路索引
+            // 线路索引的更新会在回调中通过 updateChannelUI 同步到设置面板
+            // 删除多余且危险的赋值代码
         }
 
         playbackManager.playChannel(currentLiveChannelItem, changeSource);
@@ -824,7 +812,6 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
         return true;
     }
 
-    // 手动切台（有 Toast）
     private void playNext() {
         if (!isCurrentLiveChannelValid()) {
             Toast.makeText(App.getInstance(), "暂无直播源", Toast.LENGTH_SHORT).show();
@@ -851,14 +838,12 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
         }
     }
 
-    // 静默切台（超时自动调用，无 Toast）
     private void playNextSilent() {
         if (!isCurrentLiveChannelValid()) return;
         Integer[] groupChannelIndex = getNextChannel(1);
         if (groupChannelIndex[0] >= 0 && groupChannelIndex[1] >= 0) {
             playChannel(groupChannelIndex[0], groupChannelIndex[1], false);
         }
-        // 静默，不弹 Toast
     }
 
     private void playPreviousSilent() {
@@ -877,7 +862,6 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
         if (playbackManager != null) playbackManager.playNextSource();
     }
 
-    // 用户主动重放（重新获取当前频道的最新信息）
     private void replayChannel() {
         if (currentLiveChannelItem == null || currentChannelGroupIndex < 0) return;
 
@@ -885,13 +869,11 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
         if (currentLiveChannelIndex < 0 || currentLiveChannelIndex >= channels.size()) return;
 
         currentLiveChannelItem = channels.get(currentLiveChannelIndex);
-        // 注意：include_back 会在 playChannel 内部重新设置，这里不需要再手动设置
 
         playbackManager.playChannel(currentLiveChannelItem, false);
         getEpg(new Date());
         showChannelInfo();
         mHandler.post(tv_sys_timeRunnable);
-        // UI 文本会通过 onCurrentChannelChanged 回调自动更新
     }
 
     // ========== 初始化 ==========
@@ -1070,7 +1052,6 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
     }
 
     private void initLiveState() {
-        // 缩放和解码偏好已在 LivePlaybackManager.initController() 中恢复
         if (settingsPanel != null) {
             settingsPanel.setCurrentScale(playbackManager.getCurrentScale());
             settingsPanel.setCurrentPlayerType(playbackManager.getCurrentPlayerType());
@@ -1249,7 +1230,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
         showBottomEpg();
     }
 
-    // ========== 新增辅助方法 ==========
+    // ========== 辅助方法 ==========
     private boolean handleSingleTap(MotionEvent e) {
         boolean leftShowing = (channelListPanel != null && channelListPanel.isShowing());
         boolean bottomShowing = (tvBottomLayout.getVisibility() == View.VISIBLE);
@@ -1299,7 +1280,6 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
         tv_source.setText(channel.getSourceNum() <= 0 ? "1/1"
                 : "线路 " + (channel.getSourceIndex() + 1) + "/" + channel.getSourceNum());
 
-        // 同步设置面板的线路列表和当前索引
         if (settingsPanel != null) {
             settingsPanel.updateSourceList(channel);
             settingsPanel.setCurrentSourceIndex(channel.getSourceIndex());
@@ -1329,7 +1309,6 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
 
     @Override
     public void onBackPressed() {
-        // 取消超时任务，避免按返回键后意外切台
         if (playbackManager != null) playbackManager.cancelAllTimeouts();
         if (channelListPanel != null && channelListPanel.isShowing()) {
             channelListPanel.hide();
