@@ -85,7 +85,6 @@ public class LiveChannelListPanel {
                 if (channelIdx >= 0 && channelIdx < channelAdapter.getItemCount()) {
                     channelView.scrollToPosition(channelIdx);
                     channelView.setSelection(channelIdx);
-
                     if (channelView.isScrolling() && retryCount < MAX_RETRY) {
                         retryCount++;
                         handler.postDelayed(this, 80);
@@ -159,9 +158,7 @@ public class LiveChannelListPanel {
         }
     }
 
-    /**
-     * 仅刷新频道列表（不刷新分组），用于性能优化
-     */
+    // 新增：仅刷新频道列表（每次显示时调用，避免全量重建分组）
     public void refreshChannelsOnly() {
         if (listener == null || channelAdapter == null) return;
         int groupIdx = listener.getCurrentGroupIndex();
@@ -170,7 +167,10 @@ public class LiveChannelListPanel {
         channelAdapter.setSelectedChannelIndex(listener.getCurrentChannelIndex());
         TvRecyclerView channelView = channelViewRef.get();
         if (channelView != null) {
-            channelView.post(() -> channelView.scrollToPosition(listener.getCurrentChannelIndex()));
+            channelView.post(() -> {
+                channelView.scrollToPosition(listener.getCurrentChannelIndex());
+                channelView.setSelection(listener.getCurrentChannelIndex());
+            });
         }
     }
 
@@ -241,6 +241,7 @@ public class LiveChannelListPanel {
             setEpgViewsVisible(false);
             setChannelViewsVisible(true);
             if (listener != null) {
+                listener.onEpgModeChanged(false);
                 refreshFull(listener.getChannelGroups(), listener.getCurrentGroupIndex(), listener.getCurrentChannelIndex());
             }
         } else {
@@ -263,12 +264,8 @@ public class LiveChannelListPanel {
         if (rootView == null) return;
 
         if (listener != null) {
-            // 只刷新频道列表，不刷新分组（性能优化）
+            // 只刷新频道列表，不重建分组（分组数据很少变化）
             refreshChannelsOnly();
-            // 确保分组高亮正确（分组数据通常不变，只更新高亮）
-            if (groupAdapter != null) {
-                groupAdapter.setSelectedGroupIndex(listener.getCurrentGroupIndex());
-            }
         }
 
         if (isEpgMode) {
@@ -421,6 +418,12 @@ public class LiveChannelListPanel {
                     @Override
                     public void onAnimationEnd(Animator animation) {
                         rootView.setVisibility(View.INVISIBLE);
+                        // 可选：重置 EPG 视图状态
+                        if (isEpgMode) {
+                            setEpgViewsVisible(false);
+                        } else {
+                            setChannelViewsVisible(false);
+                        }
                         isShowing = false;
                     }
                 });
