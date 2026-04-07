@@ -1,341 +1,351 @@
-package com.github.tvbox.osc.player.controller;
+package com.github.tvbox.osc.ui.panel;
 
 import android.content.Context;
 import android.os.Handler;
-import android.view.MotionEvent;
+import android.view.View;
+import android.view.animation.DecelerateInterpolator;
+import android.widget.LinearLayout;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 
-import com.github.tvbox.osc.api.ApiConfig;
+import com.owen.tvrecyclerview.widget.TvRecyclerView;
+import com.owen.tvrecyclerview.widget.V7LinearLayoutManager;
+
 import com.github.tvbox.osc.bean.LiveChannelItem;
-import com.github.tvbox.osc.bean.LivePlayerManager;
+import com.github.tvbox.osc.bean.LiveSettingGroup;
+import com.github.tvbox.osc.bean.LiveSettingItem;
 import com.github.tvbox.osc.constant.LiveConstants;
+import com.github.tvbox.osc.ui.adapter.LiveSettingGroupAdapter;
+import com.github.tvbox.osc.ui.adapter.LiveSettingItemAdapter;
+import com.github.tvbox.osc.util.FastClickCheckUtil;
 import com.github.tvbox.osc.util.HawkConfig;
+
 import com.orhanobut.hawk.Hawk;
 
-import org.json.JSONArray;
-import org.json.JSONObject;
-
 import java.lang.ref.WeakReference;
-import java.text.SimpleDateFormat;
-import java.util.Calendar;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Iterator;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
-import xyz.doikki.videoplayer.player.VideoView;
+public class LiveSettingsPanel {
 
-public class LivePlaybackManager {
+    public interface SettingsListener {
+        void onSourceChanged(int sourceIndex);
+        void onScaleChanged(int scaleIndex);
+        void onPlayerTypeChanged(int typeIndex);
+        void onTimeoutChanged(int timeoutIndex);
+        void onPreferenceChanged(String key, boolean value);
+        void onLiveAddressSelected();
+        void onExit();
+    }
 
     private final WeakReference<Context> contextRef;
-    private final Handler mainHandler;
-    private VideoView videoView;
-    private LiveController controller;
-    private final LivePlayerManager playerManager = new LivePlayerManager();
-
+    private final Handler handler;
+    private final WeakReference<LinearLayout> rootViewRef;
+    private final WeakReference<TvRecyclerView> groupViewRef;
+    private final WeakReference<TvRecyclerView> itemViewRef;
+    private LiveSettingGroupAdapter groupAdapter;
+    private LiveSettingItemAdapter itemAdapter;
+    private final ArrayList<LiveSettingGroup> settingGroups = new ArrayList<>();
+    private SettingsListener listener;
+    private boolean isShowing = false;
     private LiveChannelItem currentChannel;
-    private boolean isShiyiMode = false;
-    private String shiyiTime = null;
-    private int currentChangeSourceTimes = 0;
-    private int currentScale = 0;
-    private int currentPlayerType = 0;
+    private int currentScaleIndex = 0;
+    private int currentPlayerTypeIndex = 0;
+    private final Runnable hideRunnable = this::hideInternal;
+    private final Runnable focusAndShowRunnable = this::focusAndShowInternal;
+    private final Runnable requestLayoutRunnable = this::requestLayoutInternal;
 
-    private PlaybackListener listener;
-
-    private final Runnable timeoutChangeSourceRun = this::handleTimeoutChangeSource;
-    private final Runnable timeoutReplayRun = this::handleTimeoutReplay;
-
-    public interface PlaybackListener {
-        boolean onSingleTap(MotionEvent e);
-        void onLongPress();
-        void onPlayStateChanged(int playState);
-        void onVideoSizeChanged(int width, int height);
-        void onCurrentChannelChanged(LiveChannelItem channel, boolean isChangeSource);
-        void onAutoSwitchToNextChannel(boolean reverse);
-        void onTimeoutReplay();
-        void onShiyiModeChanged(boolean isShiyi, String timeRange);
-    }
-
-    public LivePlaybackManager(@NonNull Context context, @NonNull Handler handler, @NonNull VideoView videoView) {
+    public LiveSettingsPanel(@NonNull Context context, @NonNull Handler handler,
+                             @NonNull LinearLayout rootView, @NonNull TvRecyclerView groupView,
+                             @NonNull TvRecyclerView itemView) {
         this.contextRef = new WeakReference<>(context);
-        this.mainHandler = handler;
-        this.videoView = videoView;
-        initController();
+        this.handler = handler;
+        this.rootViewRef = new WeakReference<>(rootView);
+        this.groupViewRef = new WeakReference<>(groupView);
+        this.itemViewRef = new WeakReference<>(itemView);
+        rootView.setVisibility(View.INVISIBLE);
     }
 
-    private void initController() {
-        Context ctx = contextRef.get();
-        if (ctx == null) return;
+    public void init() { initSettingGroups(); initGroupView(); initItemView(); }
+    public void setListener(SettingsListener listener) { this.listener = listener; }
 
-        controller = new LiveController(ctx);
-        controller.setListener(new LiveController.LiveControlListener() {
-            @Override
-            public boolean singleTap(MotionEvent e) {
-                return listener != null && listener.onSingleTap(e);
-            }
+    // 外部设置初始值（仅在 initLiveState 调用一次）
+    public void setCurrentScale(int scaleIndex) { this.currentScaleIndex = scaleIndex; }
+    public void setCurrentPlayerType(int typeIndex) { this.currentPlayerTypeIndex = typeIndex; }
 
-            @Override
-            public void longPress() {
-                if (listener != null) listener.onLongPress();
-            }
-
-            @Override
-            public void playStateChanged(int playState) {
-                handlePlayState(playState);
-                if (listener != null) listener.onPlayStateChanged(playState);
-            }
-
-            @Override
-            public void changeSource(int direction) {
-                if (direction > 0) playNextSource();
-                else playPreSource();
-            }
-        });
-
-        controller.setCanChangePosition(false);
-        controller.setEnableInNormal(true);
-        controller.setGestureEnabled(true);
-        controller.setDoubleTapTogglePlayEnabled(false);
-        videoView.setVideoController(controller);
-        videoView.setProgressManager(null);
-
-        playerManager.init(videoView);
-        this.currentScale = playerManager.getLivePlayerScale();
-        this.currentPlayerType = playerManager.getLivePlayerType();
-    }
-
-    private void handlePlayState(int playState) {
-        if (currentChannel == null) return;
-
-        switch (playState) {
-            case VideoView.STATE_PREPARED:
-                currentChangeSourceTimes = 0;
-                cancelAllTimeouts();
-                if (listener != null) {
-                    int[] size = videoView.getVideoSize();
-                    if (size.length >= 2) listener.onVideoSizeChanged(size[0], size[1]);
-                }
-                break;
-            case VideoView.STATE_BUFFERED:
-            case VideoView.STATE_PLAYING:
-                cancelAllTimeouts();
-                currentChangeSourceTimes = 0;
-                break;
-            case VideoView.STATE_BUFFERING:
-            case VideoView.STATE_PREPARING:
-            case VideoView.STATE_ERROR:
-            case VideoView.STATE_PLAYBACK_COMPLETED:
-                startTimeoutTimer();
-                break;
+    // 切换频道后同步记忆值（始终更新索引，并在面板显示且当前选中该分组时立即刷新）
+    public void syncScale(int scaleIndex) {
+        this.currentScaleIndex = scaleIndex;
+        if (isShowing && groupAdapter != null && groupAdapter.getSelectedGroupIndex() == 1 && itemAdapter != null) {
+            itemAdapter.selectItem(scaleIndex, true, false);
         }
     }
 
-    private void startTimeoutTimer() {
-        cancelAllTimeouts();
+    public void syncPlayerType(int typeIndex) {
+        this.currentPlayerTypeIndex = typeIndex;
+        if (isShowing && groupAdapter != null && groupAdapter.getSelectedGroupIndex() == 2 && itemAdapter != null) {
+            itemAdapter.selectItem(typeIndex, true, false);
+        }
+    }
+
+    // ==================== 初始化数据 ====================
+    private void initSettingGroups() {
+        ArrayList<String> groupNames = new ArrayList<>(Arrays.asList(
+                "线路选择", "画面比例", "播放解码", "超时换源", "偏好设置", "直播地址", "退出直播"
+        ));
+        ArrayList<ArrayList<String>> itemsArrayList = new ArrayList<>();
+        itemsArrayList.add(new ArrayList<>());
+        itemsArrayList.add(new ArrayList<>(Arrays.asList("默认", "16:9", "4:3", "填充", "原始", "裁剪")));
+        itemsArrayList.add(new ArrayList<>(Arrays.asList("系统", "ijk硬解", "ijk软解", "exo")));
+        itemsArrayList.add(new ArrayList<>(Arrays.asList("关", "5s", "10s", "15s", "20s", "25s", "30s")));
+        itemsArrayList.add(new ArrayList<>(Arrays.asList("显示时间", "显示网速", "换台反转", "跨选分类", "关闭密码")));
+        itemsArrayList.add(new ArrayList<>(Arrays.asList("列表历史")));
+        itemsArrayList.add(new ArrayList<>(Arrays.asList("确定退出")));
+
+        settingGroups.clear();
+        for (int i = 0; i < groupNames.size(); i++) {
+            LiveSettingGroup group = new LiveSettingGroup();
+            group.setGroupIndex(i);
+            group.setGroupName(groupNames.get(i));
+            ArrayList<LiveSettingItem> itemList = new ArrayList<>();
+            for (int j = 0; j < itemsArrayList.get(i).size(); j++) {
+                LiveSettingItem item = new LiveSettingItem();
+                item.setItemIndex(j);
+                item.setItemName(itemsArrayList.get(i).get(j));
+                itemList.add(item);
+            }
+            group.setLiveSettingItems(itemList);
+            settingGroups.add(group);
+        }
+        restoreHawkSettings();
+    }
+
+    private void restoreHawkSettings() {
         int timeout = Hawk.get(HawkConfig.LIVE_CONNECT_TIMEOUT, 2);
-        if (timeout == 0) {
-            mainHandler.postDelayed(timeoutReplayRun, 30_000);
-        } else {
-            mainHandler.postDelayed(timeoutChangeSourceRun, timeout * 5000L);
+        if (settingGroups.size() > 3) {
+            List<LiveSettingItem> items = settingGroups.get(3).getLiveSettingItems();
+            if (timeout >= 0 && timeout < items.size()) items.get(timeout).setItemSelected(true);
+        }
+        if (settingGroups.size() > 4) {
+            List<LiveSettingItem> prefItems = settingGroups.get(4).getLiveSettingItems();
+            if (!prefItems.isEmpty()) prefItems.get(0).setItemSelected(Hawk.get(HawkConfig.LIVE_SHOW_TIME, false));
+            if (prefItems.size() > 1) prefItems.get(1).setItemSelected(Hawk.get(HawkConfig.LIVE_SHOW_NET_SPEED, false));
+            if (prefItems.size() > 2) prefItems.get(2).setItemSelected(Hawk.get(HawkConfig.LIVE_CHANNEL_REVERSE, false));
+            if (prefItems.size() > 3) prefItems.get(3).setItemSelected(Hawk.get(HawkConfig.LIVE_CROSS_GROUP, false));
+            if (prefItems.size() > 4) prefItems.get(4).setItemSelected(Hawk.get(HawkConfig.LIVE_SKIP_PASSWORD, false));
         }
     }
 
-    public void cancelAllTimeouts() {
-        mainHandler.removeCallbacks(timeoutChangeSourceRun);
-        mainHandler.removeCallbacks(timeoutReplayRun);
+    private void initGroupView() {
+        TvRecyclerView groupView = groupViewRef.get();
+        if (groupView == null) return;
+        groupView.setHasFixedSize(true);
+        groupView.setLayoutManager(new V7LinearLayoutManager(groupView.getContext(), 1, false));
+        groupAdapter = new LiveSettingGroupAdapter();
+        groupView.setAdapter(groupAdapter);
+        groupAdapter.setNewData(settingGroups);
+        groupView.setOnItemListener(new TvRecyclerView.OnItemListener() {
+            @Override public void onItemPreSelected(TvRecyclerView parent, View itemView, int position) {}
+            @Override public void onItemSelected(TvRecyclerView parent, View itemView, int position) { selectGroup(position, true); }
+            @Override public void onItemClick(TvRecyclerView parent, View itemView, int position) {}
+        });
+        groupAdapter.setOnItemClickListener((adapter, view, position) -> { FastClickCheckUtil.check(view); selectGroup(position, false); });
     }
 
-    private void handleTimeoutChangeSource() {
-        if (currentChannel == null) return;
-        currentChangeSourceTimes++;
-        if (currentChannel.getSourceNum() == currentChangeSourceTimes) {
-            currentChangeSourceTimes = 0;
-            if (listener != null) {
-                boolean reverse = Hawk.get(HawkConfig.LIVE_CHANNEL_REVERSE, false);
-                listener.onAutoSwitchToNextChannel(reverse);
+    private void initItemView() {
+        TvRecyclerView itemView = itemViewRef.get();
+        if (itemView == null) return;
+        itemView.setHasFixedSize(true);
+        itemView.setLayoutManager(new V7LinearLayoutManager(itemView.getContext(), 1, false));
+        itemAdapter = new LiveSettingItemAdapter();
+        itemView.setAdapter(itemAdapter);
+        itemView.setOnItemListener(new TvRecyclerView.OnItemListener() {
+            @Override public void onItemPreSelected(TvRecyclerView parent, View itemView, int position) {}
+            @Override public void onItemSelected(TvRecyclerView parent, View itemView, int position) {
+                if (position < 0) return;
+                if (groupAdapter != null) groupAdapter.setFocusedGroupIndex(-1);
+                if (itemAdapter != null) itemAdapter.setFocusedItemIndex(position);
+                handler.removeCallbacks(hideRunnable);
+                handler.postDelayed(hideRunnable, LiveConstants.AUTO_HIDE_SETTINGS_MS);
             }
-        } else {
-            playNextSource();
+            @Override public void onItemClick(TvRecyclerView parent, View itemView, int position) { clickItem(position); }
+        });
+        itemAdapter.setOnItemClickListener((adapter, view, position) -> { FastClickCheckUtil.check(view); clickItem(position); });
+    }
+
+    // ==================== 选择逻辑 ====================
+    private void selectGroup(int position, boolean focus) {
+        if (position < 0 || position >= settingGroups.size() || groupAdapter == null || itemAdapter == null) return;
+        if (focus) { groupAdapter.setFocusedGroupIndex(position); itemAdapter.setFocusedItemIndex(-1); }
+        groupAdapter.setSelectedGroupIndex(position);
+        itemAdapter.setNewData(settingGroups.get(position).getLiveSettingItems());
+        // 懒刷新：进入分组时才从当前记录的值刷新高亮
+        if (position == 0 && currentChannel != null) {
+            int idx = currentChannel.getSourceIndex();
+            List<LiveSettingItem> data = itemAdapter.getData();
+            if (idx >= 0 && data != null && idx < data.size()) itemAdapter.selectItem(idx, true, false);
+        } else if (position == 1) {
+            itemAdapter.selectItem(currentScaleIndex, true, true);
+        } else if (position == 2) {
+            itemAdapter.selectItem(currentPlayerTypeIndex, true, true);
         }
+        int scrollPos = itemAdapter.getSelectedItemIndex();
+        if (scrollPos < 0) scrollPos = 0;
+        TvRecyclerView itemView = itemViewRef.get();
+        if (itemView != null) itemView.scrollToPosition(scrollPos);
+        handler.removeCallbacks(hideRunnable);
+        handler.postDelayed(hideRunnable, LiveConstants.AUTO_HIDE_SETTINGS_MS);
     }
 
-    private void handleTimeoutReplay() {
-        if (currentChannel == null) return;
-        if (listener != null) listener.onTimeoutReplay();
+    private void clickItem(int position) {
+        if (groupAdapter == null || itemAdapter == null) return;
+        int groupIndex = groupAdapter.getSelectedGroupIndex();
+        if (groupIndex < 0 || groupIndex >= settingGroups.size()) return;
+        if (groupIndex == 0 && currentChannel == null) { showToast("当前无直播源，无法切换线路"); return; }
+        if (groupIndex < 4) itemAdapter.selectItem(position, true, true);
+        if (listener == null) return;
+        switch (groupIndex) {
+            case 0: if (currentChannel != null) { currentChannel.setSourceIndex(position); listener.onSourceChanged(position); } break;
+            case 1: currentScaleIndex = position; listener.onScaleChanged(position); break;
+            case 2: currentPlayerTypeIndex = position; listener.onPlayerTypeChanged(position); break;
+            case 3: listener.onTimeoutChanged(position); Hawk.put(HawkConfig.LIVE_CONNECT_TIMEOUT, position); break;
+            case 4: handlePreferenceChange(position); break;
+            case 5: if (position == 0) listener.onLiveAddressSelected(); break;
+            case 6: if (position == 0) listener.onExit(); break;
+        }
+        handler.removeCallbacks(hideRunnable);
+        handler.postDelayed(hideRunnable, LiveConstants.AUTO_HIDE_SETTINGS_MS);
     }
 
-    public void setListener(PlaybackListener listener) {
-        this.listener = listener;
+    private void handlePreferenceChange(int position) {
+        String key = null;
+        switch (position) {
+            case 0: key = HawkConfig.LIVE_SHOW_TIME; break;
+            case 1: key = HawkConfig.LIVE_SHOW_NET_SPEED; break;
+            case 2: key = HawkConfig.LIVE_CHANNEL_REVERSE; break;
+            case 3: key = HawkConfig.LIVE_CROSS_GROUP; break;
+            case 4: key = HawkConfig.LIVE_SKIP_PASSWORD; break;
+        }
+        if (key == null) return;
+        boolean newValue = !Hawk.get(key, false);
+        Hawk.put(key, newValue);
+        if (listener != null) listener.onPreferenceChanged(key, newValue);
+        if (itemAdapter != null) itemAdapter.selectItem(position, newValue, false);
     }
 
-    // ========== 核心修复：播放频道时同步该频道的记忆值 ==========
-    public void playChannel(LiveChannelItem channel, boolean isChangeSource) {
-        if (channel == null) return;
-        if (videoView == null) return;
-
-        // 单线路换源时直接返回（原脚本逻辑）
-        if (isChangeSource && channel.getSourceNum() == 1) {
-            if (listener != null) listener.onCurrentChannelChanged(channel, true);
+    // ==================== 显示/隐藏 ====================
+    public void show() {
+        if (isShowing) {
+            handler.removeCallbacks(hideRunnable);
+            handler.postDelayed(hideRunnable, LiveConstants.AUTO_HIDE_SETTINGS_MS);
             return;
         }
-
-        resetShiyiMode();
-        videoView.release();
-        currentChannel = channel;
-
-        currentChannel.setinclude_back(
-            currentChannel.getUrl().indexOf(LiveConstants.PLTV_FLAG + "8888") != -1);
-
-        // 加载该频道单独记忆的 scale / playerType
-        playerManager.getLiveChannelPlayer(videoView, channel.getChannelName());
-        // 立即同步当前频道的记忆值（修复右侧面板显示上一个频道的值）
-        this.currentScale = playerManager.getLivePlayerScale();
-        this.currentPlayerType = playerManager.getLivePlayerType();
-
-        videoView.setUrl(channel.getUrl(), buildPlayHeaders(channel.getUrl()));
-        videoView.start();
-
-        if (listener != null) listener.onCurrentChannelChanged(channel, isChangeSource);
+        refreshSourceListDisplay();
+        if (groupAdapter != null) groupAdapter.setNewData(settingGroups);
+        // 完全模仿原脚本：始终从“线路选择”开始
+        selectGroup(0, false);
+        TvRecyclerView groupView = groupViewRef.get();
+        if (groupView != null) groupView.scrollToPosition(0);
+        handler.postDelayed(focusAndShowRunnable, 200);
+        isShowing = true;
     }
 
-    public void playShiyi(String shiyiTimeRange) {
-        if (currentChannel == null) return;
-        if (videoView == null) return;
-
-        isShiyiMode = true;
-        shiyiTime = shiyiTimeRange;
-        if (listener != null) listener.onShiyiModeChanged(true, shiyiTimeRange);
-
-        String[] urls = buildShiyiUrls(currentChannel.getUrl(), shiyiTimeRange);
-        videoView.release();
-        videoView.setUrl(urls[0], buildPlayHeaders(urls[0]));
-        videoView.start();
+    private void focusAndShowInternal() {
+        TvRecyclerView groupView = groupViewRef.get();
+        TvRecyclerView itemView = itemViewRef.get();
+        LinearLayout rootView = rootViewRef.get();
+        if (groupView == null || rootView == null) { isShowing = false; return; }
+        boolean isScrolling = groupView.isScrolling() || (itemView != null && itemView.isScrolling()) || groupView.isComputingLayout() || (itemView != null && itemView.isComputingLayout());
+        if (isScrolling) { handler.postDelayed(focusAndShowRunnable, 100); return; }
+        groupView.scrollToPosition(0);
+        groupView.setSelection(0);
+        groupView.requestFocus();
+        rootView.setVisibility(View.VISIBLE);
+        rootView.setAlpha(0.0f);
+        rootView.setTranslationX(rootView.getWidth() / 2f);
+        rootView.animate().translationX(0).alpha(1.0f).setDuration(250).setInterpolator(new DecelerateInterpolator()).setListener(null);
+        handler.removeCallbacks(hideRunnable);
+        handler.postDelayed(hideRunnable, LiveConstants.AUTO_HIDE_SETTINGS_MS);
+        handler.postDelayed(requestLayoutRunnable, 255);
     }
 
-    public void playNextSource() {
-        if (currentChannel == null) return;
-        resetShiyiMode();
-        currentChannel.nextSource();
-        playChannel(currentChannel, true);
-    }
+    public void hide() { hideInternal(); }
 
-    public void playPreSource() {
-        if (currentChannel == null) return;
-        resetShiyiMode();
-        currentChannel.preSource();
-        playChannel(currentChannel, true);
-    }
-
-    public void resetShiyiMode() {
-        isShiyiMode = false;
-        shiyiTime = null;
-        if (listener != null) listener.onShiyiModeChanged(false, null);
-    }
-
-    // ========== 时移工具方法 ==========
-    public String[] buildShiyiUrls(String originalUrl, String shiyiTime) {
-        String[] result = new String[2];
-        String separator = originalUrl.contains("?") ? "&" : "?";
-        result[1] = originalUrl + separator + LiveConstants.PLAYSEEK_PARAM + shiyiTime;
-        if (originalUrl.contains(LiveConstants.PLTV_FLAG)) {
-            String tvodUrl = originalUrl.replace(LiveConstants.PLTV_FLAG, LiveConstants.TVOD_FLAG);
-            result[0] = tvodUrl + (tvodUrl.contains("?") ? "&" : "?") + LiveConstants.PLAYSEEK_PARAM + shiyiTime;
-        } else {
-            result[0] = result[1];
-        }
-        return result;
-    }
-
-    public String[] buildShiyiTimes(String targetDate, String startTime, String endTime) {
-        SimpleDateFormat sdf = new SimpleDateFormat(LiveConstants.DATE_FORMAT_YMD_NUM);
-        String startDateTime = targetDate + startTime.replace(":", "") + "30";
-        String endDateTime;
-        if (endTime.compareTo(startTime) < 0) {
-            try {
-                Date date = sdf.parse(targetDate);
-                Calendar cal = Calendar.getInstance();
-                cal.setTime(date);
-                cal.add(Calendar.DAY_OF_MONTH, 1);
-                String nextDay = sdf.format(cal.getTime());
-                endDateTime = nextDay + endTime.replace(":", "") + "30";
-            } catch (Exception e) {
-                endDateTime = targetDate + endTime.replace(":", "") + "30";
-            }
-        } else {
-            endDateTime = targetDate + endTime.replace(":", "") + "30";
-        }
-        return new String[]{startDateTime, endDateTime};
-    }
-
-    public boolean isValidShiyiTime(String startTime, String endTime) {
-        try {
-            SimpleDateFormat sdf = new SimpleDateFormat(LiveConstants.DATE_FORMAT_YMDHMS);
-            return sdf.parse(startTime).getTime() < sdf.parse(endTime).getTime();
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
-    private HashMap<String, String> buildPlayHeaders(String url) {
-        HashMap<String, String> header = new HashMap<>();
-        try {
-            boolean matchTo = false;
-            JSONArray livePlayHeaders = new JSONArray(ApiConfig.get().getLivePlayHeaders().toString());
-            for (int i = 0; i < livePlayHeaders.length(); i++) {
-                JSONObject headerObj = livePlayHeaders.getJSONObject(i);
-                JSONArray flags = headerObj.getJSONArray("flag");
-                JSONObject headerData = headerObj.getJSONObject("header");
-                for (int j = 0; j < flags.length(); j++) {
-                    if (url.contains(flags.getString(j))) {
-                        matchTo = true;
-                        break;
+    private void hideInternal() {
+        LinearLayout rootView = rootViewRef.get();
+        if (rootView == null || rootView.getVisibility() != View.VISIBLE) return;
+        rootView.animate().translationX(rootView.getWidth() / 2f).alpha(0.0f).setDuration(250).setInterpolator(new DecelerateInterpolator())
+                .setListener(new android.animation.AnimatorListenerAdapter() {
+                    @Override public void onAnimationEnd(android.animation.Animator animation) {
+                        LinearLayout view = rootViewRef.get();
+                        if (view != null) { view.setVisibility(View.INVISIBLE); view.clearAnimation(); }
+                        if (groupAdapter != null) groupAdapter.setSelectedGroupIndex(-1);
+                        isShowing = false;
                     }
-                }
-                if (matchTo) {
-                    Iterator<String> keys = headerData.keys();
-                    while (keys.hasNext()) {
-                        String key = keys.next();
-                        header.put(key, headerData.getString(key));
-                    }
-                    break;
-                }
-            }
-            if (!matchTo) header.put("User-Agent", LiveConstants.DEFAULT_USER_AGENT);
-        } catch (Exception e) {
-            header.put("User-Agent", LiveConstants.DEFAULT_USER_AGENT);
-        }
-        return header;
+                });
+        handler.removeCallbacks(hideRunnable);
     }
 
-    // ========== 播放器查询与控制 ==========
-    public void seekTo(int position) { if (videoView != null) videoView.seekTo(position); }
-    public long getCurrentPosition() { return videoView != null ? videoView.getCurrentPosition() : 0; }
-    public long getDuration() { return videoView != null ? videoView.getDuration() : 0; }
-    public int[] getVideoSize() { return videoView != null ? videoView.getVideoSize() : new int[]{0, 0}; }
-    public float getTcpSpeed() { return videoView != null ? videoView.getTcpSpeed() : 0; }
-    public void pause() { if (videoView != null) videoView.pause(); }
-    public void resume() { if (videoView != null) videoView.resume(); }
-    public void release() { cancelAllTimeouts(); if (videoView != null) { videoView.release(); videoView = null; } contextRef.clear(); listener = null; }
-    public boolean isShiyiMode() { return isShiyiMode; }
-    public String getShiyiTime() { return shiyiTime; }
-    public LiveChannelItem getCurrentChannel() { return currentChannel; }
-    public int getCurrentScale() { return currentScale; }
-    public int getCurrentPlayerType() { return currentPlayerType; }
+    private void requestLayoutInternal() { LinearLayout root = rootViewRef.get(); if (root != null) root.requestLayout(); }
 
-    public void changeScale(int scaleIndex) {
-        if (videoView != null && currentChannel != null) {
-            playerManager.changeLivePlayerScale(videoView, scaleIndex, currentChannel.getChannelName());
-            this.currentScale = scaleIndex;
+    // ==================== 数据更新 ====================
+    public void updateSourceList(LiveChannelItem channel) { this.currentChannel = channel; refreshSourceListDisplay(); }
+
+    private void refreshSourceListDisplay() {
+        if (settingGroups.isEmpty()) return;
+        LiveSettingGroup sourceGroup = settingGroups.get(0);
+        if (sourceGroup == null) return;
+        if (currentChannel == null || currentChannel.getChannelSourceNames() == null) {
+            ArrayList<LiveSettingItem> empty = new ArrayList<>();
+            LiveSettingItem item = new LiveSettingItem();
+            item.setItemIndex(0);
+            item.setItemName("无可用线路");
+            empty.add(item);
+            sourceGroup.setLiveSettingItems(empty);
+            return;
+        }
+        ArrayList<String> sourceNames = currentChannel.getChannelSourceNames();
+        ArrayList<LiveSettingItem> itemList = new ArrayList<>();
+        for (int j = 0; j < sourceNames.size(); j++) {
+            LiveSettingItem item = new LiveSettingItem();
+            item.setItemIndex(j);
+            item.setItemName(sourceNames.get(j));
+            itemList.add(item);
+        }
+        sourceGroup.setLiveSettingItems(itemList);
+        if (isShowing && groupAdapter != null && groupAdapter.getSelectedGroupIndex() == 0 && itemAdapter != null) {
+            itemAdapter.setNewData(itemList);
+            int idx = currentChannel.getSourceIndex();
+            if (idx >= 0 && idx < itemList.size()) itemAdapter.selectItem(idx, true, false);
         }
     }
 
-    public void changePlayerType(int typeIndex) {
-        if (videoView == null || currentChannel == null) return;
-        videoView.release();
-        playerManager.changeLivePlayerType(videoView, typeIndex, currentChannel.getChannelName());
-        this.currentPlayerType = typeIndex;
-        String url = currentChannel.getUrl();
-        videoView.setUrl(url, buildPlayHeaders(url));
-        videoView.start();
+    public void setCurrentSourceIndex(int index) {
+        if (currentChannel == null) return;
+        if (index < 0 || index >= currentChannel.getSourceNum()) return;
+        currentChannel.setSourceIndex(index);
+        if (isShowing && groupAdapter != null && groupAdapter.getSelectedGroupIndex() == 0 && itemAdapter != null)
+            itemAdapter.selectItem(index, true, false);
+    }
+
+    public boolean isShowing() { return isShowing; }
+
+    private void showToast(String message) { Context ctx = contextRef.get(); if (ctx != null) Toast.makeText(ctx, message, Toast.LENGTH_SHORT).show(); }
+
+    // ==================== 资源清理 ====================
+    public void destroy() {
+        handler.removeCallbacks(hideRunnable);
+        handler.removeCallbacks(focusAndShowRunnable);
+        handler.removeCallbacks(requestLayoutRunnable);
+        if (groupAdapter != null) { groupAdapter.setNewData(null); groupAdapter = null; }
+        if (itemAdapter != null) { itemAdapter.setNewData(null); itemAdapter = null; }
+        listener = null;
+        currentChannel = null;
+        settingGroups.clear();
+        isShowing = false;
+        LinearLayout root = rootViewRef.get();
+        if (root != null && root.getVisibility() == View.VISIBLE) { root.setVisibility(View.INVISIBLE); root.clearAnimation(); }
     }
 }
