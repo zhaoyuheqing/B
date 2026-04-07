@@ -68,46 +68,47 @@ public class LiveSettingsPanel {
         rootView.setVisibility(View.INVISIBLE);
     }
 
-    public void init() { initSettingGroups(); initGroupView(); initItemView(); }
-    public void setListener(SettingsListener listener) { this.listener = listener; }
-    public void setCurrentScale(int scaleIndex) { this.currentScaleIndex = scaleIndex; updateItemSelectionIfNeeded(1, scaleIndex); }
-    public void setCurrentPlayerType(int typeIndex) { this.currentPlayerTypeIndex = typeIndex; updateItemSelectionIfNeeded(2, typeIndex); }
+    public void init() {
+        initSettingGroups();
+        initGroupView();
+        initItemView();
+    }
+
+    public void setListener(SettingsListener listener) {
+        this.listener = listener;
+    }
+
+    // 供外部设置当前比例/解码的初始值（仅在启动时调用一次）
+    public void setCurrentScale(int scaleIndex) {
+        this.currentScaleIndex = scaleIndex;
+    }
+
+    public void setCurrentPlayerType(int typeIndex) {
+        this.currentPlayerTypeIndex = typeIndex;
+    }
 
     /**
-     * 同步画面比例高亮（外部调用，如切换频道后）
+     * 切换频道后调用，更新内部记录的比例索引
+     * （原脚本在进入画面比例分组时会实时从 LivePlayerManager 获取，这里仅为保持同步）
      */
     public void syncScale(int scaleIndex) {
         this.currentScaleIndex = scaleIndex;
-        if (isShowing && groupAdapter != null && groupAdapter.getSelectedGroupIndex() == 1 && itemAdapter != null) {
-            itemAdapter.selectItem(scaleIndex, true, false);
-        }
     }
 
     /**
-     * 同步解码方式高亮（外部调用，如切换频道后）
+     * 切换频道后调用，更新内部记录的解码索引
      */
     public void syncPlayerType(int typeIndex) {
         this.currentPlayerTypeIndex = typeIndex;
-        if (isShowing && groupAdapter != null && groupAdapter.getSelectedGroupIndex() == 2 && itemAdapter != null) {
-            itemAdapter.selectItem(typeIndex, true, false);
-        }
-    }
-
-    private void updateItemSelectionIfNeeded(int groupIndex, int itemIndex) {
-        if (!isShowing || groupAdapter == null || itemAdapter == null) return;
-        if (groupAdapter.getSelectedGroupIndex() != groupIndex) return;
-        itemAdapter.selectItem(itemIndex, true, false);
     }
 
     // ==================== 初始化数据 ====================
-
     private void initSettingGroups() {
         ArrayList<String> groupNames = new ArrayList<>(Arrays.asList(
                 "线路选择", "画面比例", "播放解码", "超时换源", "偏好设置", "直播地址", "退出直播"
         ));
-
         ArrayList<ArrayList<String>> itemsArrayList = new ArrayList<>();
-        itemsArrayList.add(new ArrayList<>()); // 线路选择（动态填充）
+        itemsArrayList.add(new ArrayList<>());
         itemsArrayList.add(new ArrayList<>(Arrays.asList("默认", "16:9", "4:3", "填充", "原始", "裁剪")));
         itemsArrayList.add(new ArrayList<>(Arrays.asList("系统", "ijk硬解", "ijk软解", "exo")));
         itemsArrayList.add(new ArrayList<>(Arrays.asList("关", "5s", "10s", "15s", "20s", "25s", "30s")));
@@ -120,7 +121,6 @@ public class LiveSettingsPanel {
             LiveSettingGroup group = new LiveSettingGroup();
             group.setGroupIndex(i);
             group.setGroupName(groupNames.get(i));
-
             ArrayList<LiveSettingItem> itemList = new ArrayList<>();
             for (int j = 0; j < itemsArrayList.get(i).size(); j++) {
                 LiveSettingItem item = new LiveSettingItem();
@@ -131,7 +131,6 @@ public class LiveSettingsPanel {
             group.setLiveSettingItems(itemList);
             settingGroups.add(group);
         }
-
         restoreHawkSettings();
     }
 
@@ -143,7 +142,6 @@ public class LiveSettingsPanel {
                 items.get(timeout).setItemSelected(true);
             }
         }
-
         if (settingGroups.size() > 4) {
             List<LiveSettingItem> prefItems = settingGroups.get(4).getLiveSettingItems();
             if (!prefItems.isEmpty()) prefItems.get(0).setItemSelected(Hawk.get(HawkConfig.LIVE_SHOW_TIME, false));
@@ -157,33 +155,31 @@ public class LiveSettingsPanel {
     private void initGroupView() {
         TvRecyclerView groupView = groupViewRef.get();
         if (groupView == null) return;
-
         groupView.setHasFixedSize(true);
         groupView.setLayoutManager(new V7LinearLayoutManager(groupView.getContext(), 1, false));
-
         groupAdapter = new LiveSettingGroupAdapter();
         groupView.setAdapter(groupAdapter);
         groupAdapter.setNewData(settingGroups);
-
         groupView.setOnItemListener(new TvRecyclerView.OnItemListener() {
             @Override public void onItemPreSelected(TvRecyclerView parent, View itemView, int position) {}
-            @Override public void onItemSelected(TvRecyclerView parent, View itemView, int position) { selectGroup(position, true); }
+            @Override public void onItemSelected(TvRecyclerView parent, View itemView, int position) {
+                selectGroup(position, true);
+            }
             @Override public void onItemClick(TvRecyclerView parent, View itemView, int position) {}
         });
-
-        groupAdapter.setOnItemClickListener((adapter, view, position) -> { FastClickCheckUtil.check(view); selectGroup(position, false); });
+        groupAdapter.setOnItemClickListener((adapter, view, position) -> {
+            FastClickCheckUtil.check(view);
+            selectGroup(position, false);
+        });
     }
 
     private void initItemView() {
         TvRecyclerView itemView = itemViewRef.get();
         if (itemView == null) return;
-
         itemView.setHasFixedSize(true);
         itemView.setLayoutManager(new V7LinearLayoutManager(itemView.getContext(), 1, false));
-
         itemAdapter = new LiveSettingItemAdapter();
         itemView.setAdapter(itemAdapter);
-
         itemView.setOnItemListener(new TvRecyclerView.OnItemListener() {
             @Override public void onItemPreSelected(TvRecyclerView parent, View itemView, int position) {}
             @Override public void onItemSelected(TvRecyclerView parent, View itemView, int position) {
@@ -193,25 +189,27 @@ public class LiveSettingsPanel {
                 handler.removeCallbacks(hideRunnable);
                 handler.postDelayed(hideRunnable, LiveConstants.AUTO_HIDE_SETTINGS_MS);
             }
-            @Override public void onItemClick(TvRecyclerView parent, View itemView, int position) { clickItem(position); }
+            @Override public void onItemClick(TvRecyclerView parent, View itemView, int position) {
+                clickItem(position);
+            }
         });
-
-        itemAdapter.setOnItemClickListener((adapter, view, position) -> { FastClickCheckUtil.check(view); clickItem(position); });
+        itemAdapter.setOnItemClickListener((adapter, view, position) -> {
+            FastClickCheckUtil.check(view);
+            clickItem(position);
+        });
     }
 
     // ==================== 选择逻辑 ====================
-
     private void selectGroup(int position, boolean focus) {
         if (position < 0 || position >= settingGroups.size() || groupAdapter == null || itemAdapter == null) return;
-
         if (focus) {
             groupAdapter.setFocusedGroupIndex(position);
             itemAdapter.setFocusedItemIndex(-1);
         }
-
         groupAdapter.setSelectedGroupIndex(position);
         itemAdapter.setNewData(settingGroups.get(position).getLiveSettingItems());
 
+        // 原脚本逻辑：进入分组时才从当前记录的值刷新高亮（懒刷新）
         if (position == 0 && currentChannel != null) {
             int idx = currentChannel.getSourceIndex();
             List<LiveSettingItem> data = itemAdapter.getData();
@@ -219,14 +217,15 @@ public class LiveSettingsPanel {
                 itemAdapter.selectItem(idx, true, false);
             }
         } else if (position == 1) {
+            // 画面比例：使用当前记录的比例索引
             itemAdapter.selectItem(currentScaleIndex, true, true);
         } else if (position == 2) {
+            // 播放解码：使用当前记录的解码索引
             itemAdapter.selectItem(currentPlayerTypeIndex, true, true);
         }
 
         int scrollPos = itemAdapter.getSelectedItemIndex();
         if (scrollPos < 0) scrollPos = 0;
-
         TvRecyclerView itemView = itemViewRef.get();
         if (itemView != null) itemView.scrollToPosition(scrollPos);
 
@@ -236,21 +235,16 @@ public class LiveSettingsPanel {
 
     private void clickItem(int position) {
         if (groupAdapter == null || itemAdapter == null) return;
-
         int groupIndex = groupAdapter.getSelectedGroupIndex();
         if (groupIndex < 0 || groupIndex >= settingGroups.size()) return;
-
         if (groupIndex == 0 && currentChannel == null) {
             showToast("当前无直播源，无法切换线路");
             return;
         }
-
         if (groupIndex < 4) {
             itemAdapter.selectItem(position, true, true);
         }
-
         if (listener == null) return;
-
         switch (groupIndex) {
             case 0:
                 if (currentChannel != null) {
@@ -280,7 +274,6 @@ public class LiveSettingsPanel {
                 if (position == 0) listener.onExit();
                 break;
         }
-
         handler.removeCallbacks(hideRunnable);
         handler.postDelayed(hideRunnable, LiveConstants.AUTO_HIDE_SETTINGS_MS);
     }
@@ -295,33 +288,25 @@ public class LiveSettingsPanel {
             case 4: key = HawkConfig.LIVE_SKIP_PASSWORD; break;
         }
         if (key == null) return;
-
         boolean newValue = !Hawk.get(key, false);
         Hawk.put(key, newValue);
-
         if (listener != null) listener.onPreferenceChanged(key, newValue);
-
-        if (itemAdapter != null) {
-            itemAdapter.selectItem(position, newValue, false);
-        }
+        if (itemAdapter != null) itemAdapter.selectItem(position, newValue, false);
     }
 
     // ==================== 显示/隐藏 ====================
-
     public void show() {
         if (isShowing) {
             handler.removeCallbacks(hideRunnable);
             handler.postDelayed(hideRunnable, LiveConstants.AUTO_HIDE_SETTINGS_MS);
             return;
         }
-
         refreshSourceListDisplay();
         if (groupAdapter != null) groupAdapter.setNewData(settingGroups);
+        // 完全模仿原脚本：始终从“线路选择”开始
         selectGroup(0, false);
-
         TvRecyclerView groupView = groupViewRef.get();
         if (groupView != null) groupView.scrollToPosition(0);
-
         handler.postDelayed(focusAndShowRunnable, 200);
         isShowing = true;
     }
@@ -330,26 +315,21 @@ public class LiveSettingsPanel {
         TvRecyclerView groupView = groupViewRef.get();
         TvRecyclerView itemView = itemViewRef.get();
         LinearLayout rootView = rootViewRef.get();
-
         if (groupView == null || rootView == null) {
             isShowing = false;
             return;
         }
-
         boolean isScrolling = groupView.isScrolling() ||
                 (itemView != null && itemView.isScrolling()) ||
                 groupView.isComputingLayout() ||
                 (itemView != null && itemView.isComputingLayout());
-
         if (isScrolling) {
             handler.postDelayed(focusAndShowRunnable, 100);
             return;
         }
-
         groupView.scrollToPosition(0);
         groupView.setSelection(0);
         groupView.requestFocus();
-
         rootView.setVisibility(View.VISIBLE);
         rootView.setAlpha(0.0f);
         rootView.setTranslationX(rootView.getWidth() / 2f);
@@ -359,18 +339,18 @@ public class LiveSettingsPanel {
                 .setDuration(250)
                 .setInterpolator(new DecelerateInterpolator())
                 .setListener(null);
-
         handler.removeCallbacks(hideRunnable);
         handler.postDelayed(hideRunnable, LiveConstants.AUTO_HIDE_SETTINGS_MS);
         handler.postDelayed(requestLayoutRunnable, 255);
     }
 
-    public void hide() { hideInternal(); }
+    public void hide() {
+        hideInternal();
+    }
 
     private void hideInternal() {
         LinearLayout rootView = rootViewRef.get();
         if (rootView == null || rootView.getVisibility() != View.VISIBLE) return;
-
         rootView.animate()
                 .translationX(rootView.getWidth() / 2f)
                 .alpha(0.0f)
@@ -390,7 +370,6 @@ public class LiveSettingsPanel {
                         isShowing = false;
                     }
                 });
-
         handler.removeCallbacks(hideRunnable);
     }
 
@@ -400,7 +379,6 @@ public class LiveSettingsPanel {
     }
 
     // ==================== 数据更新 ====================
-
     public void updateSourceList(LiveChannelItem channel) {
         this.currentChannel = channel;
         refreshSourceListDisplay();
@@ -408,10 +386,8 @@ public class LiveSettingsPanel {
 
     private void refreshSourceListDisplay() {
         if (settingGroups.isEmpty()) return;
-
         LiveSettingGroup sourceGroup = settingGroups.get(0);
         if (sourceGroup == null) return;
-
         if (currentChannel == null || currentChannel.getChannelSourceNames() == null) {
             ArrayList<LiveSettingItem> empty = new ArrayList<>();
             LiveSettingItem item = new LiveSettingItem();
@@ -421,7 +397,6 @@ public class LiveSettingsPanel {
             sourceGroup.setLiveSettingItems(empty);
             return;
         }
-
         ArrayList<String> sourceNames = currentChannel.getChannelSourceNames();
         ArrayList<LiveSettingItem> itemList = new ArrayList<>();
         for (int j = 0; j < sourceNames.size(); j++) {
@@ -431,7 +406,6 @@ public class LiveSettingsPanel {
             itemList.add(item);
         }
         sourceGroup.setLiveSettingItems(itemList);
-
         if (isShowing && groupAdapter != null && groupAdapter.getSelectedGroupIndex() == 0 && itemAdapter != null) {
             itemAdapter.setNewData(itemList);
             int idx = currentChannel.getSourceIndex();
@@ -444,15 +418,15 @@ public class LiveSettingsPanel {
     public void setCurrentSourceIndex(int index) {
         if (currentChannel == null) return;
         if (index < 0 || index >= currentChannel.getSourceNum()) return;
-
         currentChannel.setSourceIndex(index);
-
         if (isShowing && groupAdapter != null && groupAdapter.getSelectedGroupIndex() == 0 && itemAdapter != null) {
             itemAdapter.selectItem(index, true, false);
         }
     }
 
-    public boolean isShowing() { return isShowing; }
+    public boolean isShowing() {
+        return isShowing;
+    }
 
     private void showToast(String message) {
         Context ctx = contextRef.get();
@@ -462,12 +436,10 @@ public class LiveSettingsPanel {
     }
 
     // ==================== 资源清理 ====================
-
     public void destroy() {
         handler.removeCallbacks(hideRunnable);
         handler.removeCallbacks(focusAndShowRunnable);
         handler.removeCallbacks(requestLayoutRunnable);
-
         if (groupAdapter != null) {
             groupAdapter.setNewData(null);
             groupAdapter = null;
@@ -476,12 +448,10 @@ public class LiveSettingsPanel {
             itemAdapter.setNewData(null);
             itemAdapter = null;
         }
-
         listener = null;
         currentChannel = null;
         settingGroups.clear();
         isShowing = false;
-
         LinearLayout root = rootViewRef.get();
         if (root != null && root.getVisibility() == View.VISIBLE) {
             root.setVisibility(View.INVISIBLE);
