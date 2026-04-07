@@ -119,7 +119,7 @@ public class LivePlaybackManager {
             case VideoView.STATE_BUFFERED:
             case VideoView.STATE_PLAYING:
                 cancelAllTimeouts();
-                currentChangeSourceTimes = 0;  // 修复：重置超时换源计数器
+                currentChangeSourceTimes = 0;   // 修复：重置超时计数器
                 break;
             case VideoView.STATE_BUFFERING:
             case VideoView.STATE_PREPARING:
@@ -173,7 +173,7 @@ public class LivePlaybackManager {
 
     public void playChannel(LiveChannelItem channel, boolean isChangeSource) {
         if (channel == null) return;
-        if (videoView == null) return;  // 修复：空指针保护
+        if (videoView == null) return;
 
         if (isChangeSource && channel.getSourceNum() == 1) {
             if (listener != null) {
@@ -200,7 +200,7 @@ public class LivePlaybackManager {
 
     public void playShiyi(String shiyiTimeRange) {
         if (currentChannel == null) return;
-        if (videoView == null) return;  // 修复：空指针保护
+        if (videoView == null) return;
 
         isShiyiMode = true;
         shiyiTime = shiyiTimeRange;
