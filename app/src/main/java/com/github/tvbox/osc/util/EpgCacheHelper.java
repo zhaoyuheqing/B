@@ -37,7 +37,7 @@ public class EpgCacheHelper {
     private final Handler mainHandler;
     private String epgBaseUrl;
     
-    // ========== 缓存 ==========
+    // 缓存
     private final Map<String, ArrayList<Epginfo>> memoryCache = new LinkedHashMap<String, ArrayList<Epginfo>>() {
         @Override
         protected boolean removeEldestEntry(Map.Entry<String, ArrayList<Epginfo>> eldest) {
@@ -48,18 +48,23 @@ public class EpgCacheHelper {
     private final Set<String> pendingRequests = new HashSet<>();
     private final AtomicLong currentChannelRequestId = new AtomicLong(0);
     
-    // ========== 线程池 ==========
+    // 线程池
     private ExecutorService highPriorityExecutor;
     private ExecutorService lowPriorityExecutor;
     
-    // ========== HTTP客户端 ==========
+    // HTTP客户端
     private OkHttpClient httpClient;
     
-    // ========== Logo回调接口 ==========
+    // Logo回调
     public interface LogoCallback {
         void onLogoLoaded(String channelName, String logoUrl);
     }
     private LogoCallback logoCallback;
+    
+    public interface EpgCallback {
+        void onSuccess(String channelName, Date date, ArrayList<Epginfo> epgList);
+        void onFailure(String channelName, Date date, Exception e);
+    }
     
     public EpgCacheHelper(Context context, String epgBaseUrl) {
         this.context = context;
@@ -88,14 +93,7 @@ public class EpgCacheHelper {
         return null;
     }
     
-    /**
-     * 请求 EPG 数据
-     * @param channelName 频道名
-     * @param date 日期
-     * @param isCurrentChannel 是否为当前正在播放的频道（用于请求ID管理，确保UI更新）
-     * @param callback 回调
-     */
-    public void requestEpg(String channelName, Date date, boolean isCurrentChannel, EpgCallback callback) {
+    public void requestEpg(String channelName, Date date, EpgCallback callback, boolean isCurrentChannel) {
         if (channelName == null || date == null || callback == null) return;
         
         SimpleDateFormat sdf = new SimpleDateFormat(LiveConstants.DATE_FORMAT_YMD);
@@ -122,7 +120,7 @@ public class EpgCacheHelper {
             return;
         }
         
-        // 3. 网络请求：只有当前频道请求才递增 requestId
+        // 3. 网络请求：只有当前频道请求才递增 ID
         final long requestId = isCurrentChannel ? currentChannelRequestId.incrementAndGet() : 0;
         final String reqChannelName = channelName;
         final Date reqDate = date;
@@ -149,7 +147,6 @@ public class EpgCacheHelper {
                 try {
                     SimpleDateFormat sdf = new SimpleDateFormat(LiveConstants.DATE_FORMAT_YMD);
                     Date date = sdf.parse(dateStr);
-                    // 预加载请求不是当前频道请求，requestId = 0，callback = null
                     fetchFromNetwork(channelName, date, dateStr, 0, null);
                 } catch (Exception e) {
                     e.printStackTrace();
@@ -210,11 +207,6 @@ public class EpgCacheHelper {
             httpClient.dispatcher().executorService().shutdown();
             httpClient = null;
         }
-    }
-    
-    public interface EpgCallback {
-        void onSuccess(String channelName, Date date, ArrayList<Epginfo> epgList);
-        void onFailure(String channelName, Date date, Exception e);
     }
     
     // ========== 私有方法 ==========
@@ -412,24 +404,19 @@ public class EpgCacheHelper {
                     }
                     if (!arrayList.isEmpty()) {
                         saveToFileCache(channelName, dateStr, arrayList, logoUrl);
-                        // 只有当前频道请求且 requestId 匹配时，才回调更新 UI
-                        if (callback != null && (requestId == 0 || requestId == currentChannelRequestId.get())) {
+                        // 只有 requestId != 0 且与当前请求匹配时才回调 UI
+                        if (callback != null && requestId != 0 && requestId == currentChannelRequestId.get()) {
                             final String finalChannelName = channelName;
                             final Date finalDate = date;
                             final ArrayList<Epginfo> finalArrayList = arrayList;
                             mainHandler.post(() -> callback.onSuccess(finalChannelName, finalDate, finalArrayList));
                         }
-                    } else if (callback != null) {
-                        // 空数据也回调，避免 UI 一直等待
-                        mainHandler.post(() -> callback.onFailure(channelName, date, new Exception("Empty EPG data")));
                     }
-                } else if (callback != null) {
-                    mainHandler.post(() -> callback.onFailure(channelName, date, new Exception("HTTP error")));
                 }
             }
         } catch (Exception e) {
             e.printStackTrace();
-            if (callback != null) {
+            if (callback != null && requestId != 0) {
                 final String finalChannelName = channelName;
                 final Date finalDate = date;
                 final Exception finalException = e;
