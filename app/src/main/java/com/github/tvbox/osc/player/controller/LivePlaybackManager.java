@@ -54,6 +54,7 @@ public class LivePlaybackManager {
         void onAutoSwitchToNextChannel(boolean reverse);
         void onTimeoutReplay();
         void onShiyiModeChanged(boolean isShiyi, String timeRange);
+        void changeSource(int direction);   // 新增：通知 Activity 处理切源
     }
 
     public LivePlaybackManager(@NonNull Context context, @NonNull Handler handler, @NonNull VideoView videoView) {
@@ -87,8 +88,8 @@ public class LivePlaybackManager {
 
             @Override
             public void changeSource(int direction) {
-                if (direction > 0) playNextSource();
-                else playPreSource();
+                // 统一通过 listener 通知 Activity 处理切源
+                if (listener != null) listener.changeSource(direction);
             }
         });
 
@@ -155,7 +156,8 @@ public class LivePlaybackManager {
                 listener.onAutoSwitchToNextChannel(reverse);
             }
         } else {
-            playNextSource();
+            // 超时自动换源，也要通过 listener 通知 Activity 处理
+            if (listener != null) listener.changeSource(1);
         }
     }
 
@@ -168,11 +170,12 @@ public class LivePlaybackManager {
         this.listener = listener;
     }
 
-    // ========== 核心修复：播放频道时同步该频道的记忆值 ==========
+    // ========== 播放频道（核心方法） ==========
     public void playChannel(LiveChannelItem channel, boolean isChangeSource) {
         if (channel == null) return;
         if (videoView == null) return;
 
+        // 单线路换源时直接回调，不做实际播放
         if (isChangeSource && channel.getSourceNum() == 1) {
             if (listener != null) listener.onCurrentChannelChanged(channel, true);
             return;
@@ -187,7 +190,7 @@ public class LivePlaybackManager {
 
         // 加载该频道单独记忆的 scale / playerType
         playerManager.getLiveChannelPlayer(videoView, channel.getChannelName());
-        // 立即同步当前频道的记忆值（修复右侧面板显示上一个频道的值）
+        // 同步当前频道的记忆值
         this.currentScale = playerManager.getLivePlayerScale();
         this.currentPlayerType = playerManager.getLivePlayerType();
 
@@ -211,18 +214,13 @@ public class LivePlaybackManager {
         videoView.start();
     }
 
+    // 左右键切源：直接通知 Activity 处理（不再自己调用 playChannel）
     public void playNextSource() {
-        if (currentChannel == null) return;
-        resetShiyiMode();
-        currentChannel.nextSource();
-        playChannel(currentChannel, true);
+        if (listener != null) listener.changeSource(1);
     }
 
     public void playPreSource() {
-        if (currentChannel == null) return;
-        resetShiyiMode();
-        currentChannel.preSource();
-        playChannel(currentChannel, true);
+        if (listener != null) listener.changeSource(-1);
     }
 
     public void resetShiyiMode() {
