@@ -28,16 +28,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-/**
- * 直播设置面板管理类
- * 
- * 使用方法：
- * 1. 在 Activity init() 中 findViewById 得到三个 View
- * 2. new LiveSettingsPanel(context, handler, rootView, groupView, itemView)
- * 3. 调用 panel.init()
- * 4. 设置 listener
- * 5. 调用 show()/hide()
- */
 public class LiveSettingsPanel {
 
     public interface SettingsListener {
@@ -122,6 +112,26 @@ public class LiveSettingsPanel {
     public void setCurrentPlayerType(int typeIndex) {
         this.currentPlayerTypeIndex = typeIndex;
         updateItemSelectionIfNeeded(2, typeIndex);
+    }
+
+    /**
+     * 同步当前的解码方式高亮（从播放器获取最新值）
+     */
+    public void syncPlayerType(int typeIndex) {
+        this.currentPlayerTypeIndex = typeIndex;
+        if (isShowing && groupAdapter != null && groupAdapter.getSelectedGroupIndex() == 2 && itemAdapter != null) {
+            itemAdapter.selectItem(typeIndex, true, false);
+        }
+    }
+
+    /**
+     * 同步当前的画面比例高亮（从播放器获取最新值）
+     */
+    public void syncScale(int scaleIndex) {
+        this.currentScaleIndex = scaleIndex;
+        if (isShowing && groupAdapter != null && groupAdapter.getSelectedGroupIndex() == 1 && itemAdapter != null) {
+            itemAdapter.selectItem(scaleIndex, true, false);
+        }
     }
 
     private void updateItemSelectionIfNeeded(int groupIndex, int itemIndex) {
@@ -390,7 +400,6 @@ public class LiveSettingsPanel {
             return;
         }
 
-        // 检查 groupView 和 itemView 的滚动状态（增强健壮性）
         boolean isScrolling = groupView.isScrolling() ||
                 (itemView != null && itemView.isScrolling()) ||
                 groupView.isComputingLayout() ||
@@ -469,7 +478,6 @@ public class LiveSettingsPanel {
         LiveSettingGroup sourceGroup = settingGroups.get(0);
         if (sourceGroup == null) return;
 
-        // 增强 null 检查，防止崩溃
         if (currentChannel == null || currentChannel.getChannelSourceNames() == null) {
             ArrayList<LiveSettingItem> empty = new ArrayList<>();
             LiveSettingItem item = new LiveSettingItem();
