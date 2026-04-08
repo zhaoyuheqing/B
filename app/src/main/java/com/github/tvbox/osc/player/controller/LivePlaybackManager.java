@@ -54,8 +54,7 @@ public class LivePlaybackManager {
         void onAutoSwitchToNextChannel(boolean reverse);
         void onTimeoutReplay();
         void onShiyiModeChanged(boolean isShiyi, String timeRange);
-        // 新增：请求换源（左右键）
-        void onRequestChangeSource(int direction);  // direction: 1=下一个源, -1=上一个源
+        void onRequestChangeSource(int direction);
     }
 
     public LivePlaybackManager(@NonNull Context context, @NonNull Handler handler, @NonNull VideoView videoView) {
@@ -164,7 +163,6 @@ public class LivePlaybackManager {
         currentChannel = channel;
         currentChannel.setinclude_back(currentChannel.getUrl().indexOf(LiveConstants.PLTV_FLAG + "8888") != -1);
         playerManager.getLiveChannelPlayer(videoView, channel.getChannelName());
-        // 更新当前解码方式和画面比例（从 playerManager 获取，该 Manager 会根据 channelName 返回记忆值）
         this.currentPlayerType = playerManager.getLivePlayerType();
         this.currentScale = playerManager.getLivePlayerScale();
         videoView.setUrl(channel.getUrl(), buildPlayHeaders(channel.getUrl()));
@@ -183,7 +181,6 @@ public class LivePlaybackManager {
         videoView.start();
     }
 
-    // 左右键换源改为通过 listener 回调 Activity 处理（走完整路径）
     public void playNextSource() {
         if (listener != null) listener.onRequestChangeSource(1);
     }
@@ -198,16 +195,14 @@ public class LivePlaybackManager {
         if (listener != null) listener.onShiyiModeChanged(false, null);
     }
 
-    // 解码方式切换：应用新解码方式后，主动触发频道变化回调，让 Activity 刷新 UI
     public void changePlayerType(int typeIndex) {
         if (videoView == null || currentChannel == null) return;
         videoView.release();
         playerManager.changeLivePlayerType(videoView, typeIndex, currentChannel.getChannelName());
-        this.currentPlayerType = playerManager.getLivePlayerType();  // 更新内存
+        this.currentPlayerType = playerManager.getLivePlayerType();
         String url = currentChannel.getUrl();
         videoView.setUrl(url, buildPlayHeaders(url));
         videoView.start();
-        // 手动触发频道变化回调，确保 UI 高亮同步（isChangeSource = true 避免误判为换台）
         if (listener != null) listener.onCurrentChannelChanged(currentChannel, true);
     }
 
@@ -306,6 +301,7 @@ public class LivePlaybackManager {
             videoView.release();
             videoView = null;
         }
+        currentChannel = null;
         contextRef.clear();
         listener = null;
     }
