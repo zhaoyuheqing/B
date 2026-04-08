@@ -200,22 +200,36 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
         public void run() {
             tvSelectedChannel.setVisibility(View.GONE);
             tvSelectedChannel.setText("");
-            int grpIndx = 0, chaIndx = 0, getMin = 1, getMax;
-            for (int j = 0; j < LiveConstants.MAX_CHANNEL_GROUPS; j++) {
-                getMax = getMin + getLiveChannels(j).size() - 1;
-                if (selectedChannelNumber >= getMin && selectedChannelNumber <= getMax) {
-                    grpIndx = j;
-                    chaIndx = selectedChannelNumber - getMin + 1;
-                    break;
-                } else {
-                    getMin = getMax + 1;
-                }
+            if (selectedChannelNumber <= 0) {
+                selectedChannelNumber = 0;
+                return;
             }
-            if (selectedChannelNumber > 0) {
-                if (isNeedInputPassword(grpIndx)) {
-                    showPasswordDialogForGroup(grpIndx, chaIndx - 1);
+
+            int targetGroup = -1;
+            int targetChannel = -1;
+            int cumulativeMin = 1;
+
+            for (int g = 0; g < liveChannelGroupList.size(); g++) {
+                LiveChannelGroup group = liveChannelGroupList.get(g);
+                // 跳过需要密码且未确认的分组（不占用频道号）
+                if (isNeedInputPassword(g)) {
+                    continue;
+                }
+                int channelCount = group.getLiveChannels().size();
+                int cumulativeMax = cumulativeMin + channelCount - 1;
+                if (selectedChannelNumber >= cumulativeMin && selectedChannelNumber <= cumulativeMax) {
+                    targetGroup = g;
+                    targetChannel = selectedChannelNumber - cumulativeMin;
+                    break;
+                }
+                cumulativeMin = cumulativeMax + 1;
+            }
+
+            if (targetGroup >= 0 && targetChannel >= 0) {
+                if (isNeedInputPassword(targetGroup)) {
+                    showPasswordDialogForGroup(targetGroup, targetChannel);
                 } else {
-                    playChannel(grpIndx, chaIndx - 1, false);
+                    playChannel(targetGroup, targetChannel, false);
                 }
             }
             selectedChannelNumber = 0;
@@ -374,8 +388,9 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
                 }
             }
             @Override public void onScaleChanged(int scaleIndex) {
+                if (playbackManager == null) return;
                 try {
-                    if (playbackManager != null) playbackManager.changeScale(scaleIndex);
+                    playbackManager.changeScale(scaleIndex);
                     Toast.makeText(LivePlayActivity.this, "画面比例已应用", Toast.LENGTH_SHORT).show();
                     if (settingsPanel != null && settingsPanel.isShowing()) settingsPanel.refreshCurrentGroup();
                 } catch (Exception e) {
@@ -383,11 +398,10 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
                 }
             }
             @Override public void onPlayerTypeChanged(int typeIndex) {
+                if (playbackManager == null) return;
                 try {
-                    if (playbackManager != null) {
-                        playbackManager.changePlayerType(typeIndex);
-                        refreshAfterPlayerTypeChange(); // 补齐副作用
-                    }
+                    playbackManager.changePlayerType(typeIndex);
+                    refreshAfterPlayerTypeChange();
                     Toast.makeText(LivePlayActivity.this, "解码方式已应用", Toast.LENGTH_SHORT).show();
                     if (settingsPanel != null && settingsPanel.isShowing()) settingsPanel.refreshCurrentGroup();
                 } catch (Exception e) {
@@ -455,6 +469,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
                 if (!fromUser) return;
                 mHandler.removeCallbacks(mHideChannelInfoRun);
                 mHandler.postDelayed(mHideChannelInfoRun, LiveConstants.AUTO_HIDE_CHANNEL_INFO_MS);
+                if (playbackManager == null) return;
                 long duration = playbackManager.getDuration();
                 long newPosition = (duration * progress) / seekBar.getMax();
                 if (mCurrentTime != null) mCurrentTime.setText(stringForTimeVod((int) newPosition));
@@ -462,6 +477,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
             @Override public void onStartTrackingTouch(SeekBar seekBar) { mIsDragging = true; }
             @Override public void onStopTrackingTouch(SeekBar seekBar) {
                 mIsDragging = false;
+                if (playbackManager == null) return;
                 long duration = playbackManager.getDuration();
                 long newPosition = (duration * seekBar.getProgress()) / seekBar.getMax();
                 playbackManager.seekTo((int) newPosition);
@@ -740,7 +756,8 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
 
     // ========== 播放控制 ==========
     private boolean playChannel(int channelGroupIndex, int liveChannelIndex, boolean changeSource) {
-        if (playbackManager != null && playbackManager.isShiyiMode()) resetShiyiMode();
+        if (playbackManager == null) return false;
+        if (playbackManager.isShiyiMode()) resetShiyiMode();
         if (epgListAdapter != null) epgListAdapter.setShiyiSelection(-1, false, null);
         if (!changeSource && epgDateAdapter != null) epgDateAdapter.setSelectedIndex(6);
         if (channelGroupIndex >= liveChannelGroupList.size()) {
@@ -779,6 +796,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
     }
 
     private void playNext() {
+        if (playbackManager == null) return;
         if (!isCurrentLiveChannelValid()) {
             Toast.makeText(App.getInstance(), "暂无直播源", Toast.LENGTH_SHORT).show();
             return;
@@ -789,6 +807,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
     }
 
     private void playPrevious() {
+        if (playbackManager == null) return;
         if (!isCurrentLiveChannelValid()) {
             Toast.makeText(App.getInstance(), "暂无直播源", Toast.LENGTH_SHORT).show();
             return;
@@ -799,30 +818,35 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
     }
 
     private void playNextSilent() {
+        if (playbackManager == null) return;
         if (!isCurrentLiveChannelValid()) return;
         Integer[] idx = getNextChannel(1);
         if (idx[0] >= 0 && idx[1] >= 0) playChannel(idx[0], idx[1], false);
     }
 
     private void playPreviousSilent() {
+        if (playbackManager == null) return;
         if (!isCurrentLiveChannelValid()) return;
         Integer[] idx = getNextChannel(-1);
         if (idx[0] >= 0 && idx[1] >= 0) playChannel(idx[0], idx[1], false);
     }
 
     public void playPreSource() {
+        if (playbackManager == null) return;
         if (currentLiveChannelItem == null) return;
         currentLiveChannelItem.preSource();
         playChannel(currentChannelGroupIndex, currentLiveChannelIndex, true);
     }
 
     public void playNextSource() {
+        if (playbackManager == null) return;
         if (currentLiveChannelItem == null) return;
         currentLiveChannelItem.nextSource();
         playChannel(currentChannelGroupIndex, currentLiveChannelIndex, true);
     }
 
     private void replayChannel() {
+        if (playbackManager == null) return;
         if (currentLiveChannelItem == null || currentChannelGroupIndex < 0) return;
         List<LiveChannelItem> channels = getLiveChannels(currentChannelGroupIndex);
         if (currentLiveChannelIndex < 0 || currentLiveChannelIndex >= channels.size()) return;
@@ -837,13 +861,9 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
     // ========== 补齐切换解码方式后的副作用 ==========
     private void refreshAfterPlayerTypeChange() {
         if (currentLiveChannelItem == null) return;
-        // 退出时移模式
         if (playbackManager != null && playbackManager.isShiyiMode()) playbackManager.resetShiyiMode();
-        // 清除 EPG 时移高亮
         if (epgListAdapter != null) epgListAdapter.setShiyiSelection(-1, false, null);
-        // 重新获取当天 EPG（会刷新底部信息）
         getEpg(new Date());
-        // 预加载当前频道所有日期的 EPG
         if (epgCacheHelper != null) epgCacheHelper.preloadCurrentChannel(currentLiveChannelItem.getChannelName());
     }
 
@@ -1136,6 +1156,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
 
     private void resetShiyiMode() {
         if (playbackManager != null) playbackManager.resetShiyiMode();
+        if (epgListAdapter != null) epgListAdapter.setShiyiSelection(-1, false, null);
         showBottomEpg();
     }
 
@@ -1158,18 +1179,27 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
     }
 
     private void updateUIForPlayState(int playState) {
-        if (playState == VideoView.STATE_PREPARED) {
-            long duration = playbackManager.getDuration();
-            if (duration > 0) {
-                isVOD = true;
-                llSeekBar.setVisibility(View.VISIBLE);
-                mSeekBar.setMax((int) duration);
-                mSeekBar.setProgress(0);
-                mTotalTime.setText(stringForTimeVod((int) duration));
-            } else {
-                isVOD = false;
-                llSeekBar.setVisibility(View.GONE);
-            }
+        if (playbackManager == null) return;
+        switch (playState) {
+            case VideoView.STATE_PREPARED:
+                long duration = playbackManager.getDuration();
+                if (duration > 0) {
+                    isVOD = true;
+                    llSeekBar.setVisibility(View.VISIBLE);
+                    mSeekBar.setMax((int) duration);
+                    mSeekBar.setProgress(0);
+                    mTotalTime.setText(stringForTimeVod((int) duration));
+                } else {
+                    isVOD = false;
+                    llSeekBar.setVisibility(View.GONE);
+                }
+                break;
+            case VideoView.STATE_ERROR:
+            case VideoView.STATE_PLAYBACK_COMPLETED:
+                // 出错或播放完成时不做额外处理
+                break;
+            default:
+                break;
         }
     }
 
