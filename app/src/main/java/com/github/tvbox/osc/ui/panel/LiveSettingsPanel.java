@@ -38,15 +38,12 @@ public class LiveSettingsPanel {
         void onPreferenceChanged(String key, boolean value);
         void onLiveAddressSelected();
         void onExit();
-        
-        // 新增：获取当前频道的解码方式和画面比例（用于高亮同步）
         int getCurrentPlayerType();
         int getCurrentScale();
     }
 
     private final WeakReference<Context> contextRef;
     private final Handler handler;
-
     private final WeakReference<LinearLayout> rootViewRef;
     private final WeakReference<TvRecyclerView> groupViewRef;
     private final WeakReference<TvRecyclerView> itemViewRef;
@@ -61,10 +58,6 @@ public class LiveSettingsPanel {
 
     private final Runnable hideRunnable = this::hideInternal;
     private final Runnable focusAndShowRunnable = this::focusAndShowInternal;
-    private final Runnable requestLayoutRunnable = () -> {
-        LinearLayout root = rootViewRef.get();
-        if (root != null) root.requestLayout();
-    };
 
     public LiveSettingsPanel(@NonNull Context context, @NonNull Handler handler,
                              @NonNull LinearLayout rootView, @NonNull TvRecyclerView groupView,
@@ -320,7 +313,11 @@ public class LiveSettingsPanel {
                 .setListener(null);
         handler.removeCallbacks(hideRunnable);
         handler.postDelayed(hideRunnable, LiveConstants.AUTO_HIDE_SETTINGS_MS);
-        handler.postDelayed(requestLayoutRunnable, 255);
+        // 延迟请求布局，避免使用未初始化的变量
+        handler.postDelayed(() -> {
+            LinearLayout root = rootViewRef.get();
+            if (root != null) root.requestLayout();
+        }, 255);
     }
 
     public void hide() {
@@ -411,7 +408,6 @@ public class LiveSettingsPanel {
     public void destroy() {
         handler.removeCallbacks(hideRunnable);
         handler.removeCallbacks(focusAndShowRunnable);
-        handler.removeCallbacks(requestLayoutRunnable);
         if (groupAdapter != null) {
             groupAdapter.setNewData(null);
             groupAdapter = null;
