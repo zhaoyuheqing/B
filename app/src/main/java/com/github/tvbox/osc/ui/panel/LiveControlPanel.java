@@ -2,6 +2,7 @@ package com.github.tvbox.osc.ui.panel;
 
 import android.content.Context;
 import android.os.Handler;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.FrameLayout;
@@ -17,6 +18,7 @@ import java.util.Date;
 import java.util.Locale;
 
 public class LiveControlPanel {
+    private static final String TAG = "LiveControlPanel";
     private final Context context;
     private final LivePlaybackManager playbackManager;
     private final Handler handler;
@@ -83,22 +85,32 @@ public class LiveControlPanel {
             }
         });
 
-        container.addView(panelView);
+        container.addView(panelView, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
         panelView.setVisibility(View.GONE);
+        Log.d(TAG, "Control panel initialized");
     }
 
     public void show() {
         if (isVisible) return;
+        Log.d(TAG, "show() called, container visibility: " + container.getVisibility());
         updateUI();
         panelView.setVisibility(View.VISIBLE);
+        // 确保容器可见（可能被其他布局覆盖）
+        container.setVisibility(View.VISIBLE);
+        container.bringToFront();
         isVisible = true;
         handler.removeCallbacks(autoHideRunnable);
         handler.postDelayed(autoHideRunnable, LiveConstants.CONTROL_PANEL_AUTO_HIDE_MS);
+        Log.d(TAG, "Panel shown");
     }
 
     public void hide() {
         if (!isVisible) return;
+        Log.d(TAG, "hide() called");
         panelView.setVisibility(View.GONE);
+        container.setVisibility(View.GONE);
         isVisible = false;
         handler.removeCallbacks(autoHideRunnable);
     }
