@@ -73,16 +73,29 @@ public class LiveChannelListPanel {
 
             int groupIdx = listener.getCurrentGroupIndex();
             int channelIdx = listener.getCurrentChannelIndex();
+            List<LiveChannelGroup> groups = listener.getChannelGroups();
 
-            if (groupAdapter != null) {
+            // 有效性检查：groupIdx 必须在合法范围内
+            if (groupIdx < 0 || groupIdx >= groups.size()) {
+                groupIdx = 0;
+            }
+            if (groupAdapter != null && groupIdx < groups.size()) {
                 groupAdapter.setSelectedGroupIndex(groupIdx);
             }
+
+            List<LiveChannelItem> channels = (groupIdx >= 0 && groupIdx < groups.size()) 
+                    ? listener.getLiveChannels(groupIdx) : new ArrayList<>();
             if (channelAdapter != null) {
-                channelAdapter.setSelectedChannelIndex(channelIdx);
+                channelAdapter.setNewData(channels);
+                if (channelIdx >= 0 && channelIdx < channels.size()) {
+                    channelAdapter.setSelectedChannelIndex(channelIdx);
+                } else {
+                    channelAdapter.setSelectedChannelIndex(-1);
+                }
             }
 
             channelView.post(() -> {
-                if (channelIdx >= 0 && channelIdx < channelAdapter.getItemCount()) {
+                if (channelIdx >= 0 && channelIdx < channels.size()) {
                     channelView.scrollToPosition(channelIdx);
                     channelView.setSelection(channelIdx);
                     if (channelView.isScrolling() && retryCount < MAX_RETRY) {
@@ -158,19 +171,31 @@ public class LiveChannelListPanel {
         }
     }
 
-    // 新增：仅刷新频道列表（每次显示时调用，避免全量重建分组）
+    // 仅刷新频道列表（每次显示时调用，避免全量重建分组）
     public void refreshChannelsOnly() {
         if (listener == null || channelAdapter == null) return;
         int groupIdx = listener.getCurrentGroupIndex();
+        List<LiveChannelGroup> groups = listener.getChannelGroups();
+        // 有效性检查：groupIdx 必须在合法范围内
+        if (groupIdx < 0 || groupIdx >= groups.size()) {
+            // 无效时清空频道列表并返回
+            channelAdapter.setNewData(new ArrayList<>());
+            return;
+        }
         List<LiveChannelItem> channels = listener.getLiveChannels(groupIdx);
         channelAdapter.setNewData(channels);
-        channelAdapter.setSelectedChannelIndex(listener.getCurrentChannelIndex());
-        TvRecyclerView channelView = channelViewRef.get();
-        if (channelView != null) {
-            channelView.post(() -> {
-                channelView.scrollToPosition(listener.getCurrentChannelIndex());
-                channelView.setSelection(listener.getCurrentChannelIndex());
-            });
+        int channelIdx = listener.getCurrentChannelIndex();
+        if (channelIdx >= 0 && channelIdx < channels.size()) {
+            channelAdapter.setSelectedChannelIndex(channelIdx);
+            TvRecyclerView channelView = channelViewRef.get();
+            if (channelView != null) {
+                channelView.post(() -> {
+                    channelView.scrollToPosition(channelIdx);
+                    channelView.setSelection(channelIdx);
+                });
+            }
+        } else {
+            channelAdapter.setSelectedChannelIndex(-1);
         }
     }
 
@@ -341,15 +366,12 @@ public class LiveChannelListPanel {
         groupAdapter = new LiveChannelGroupAdapter();
         groupView.setAdapter(groupAdapter);
         groupView.setOnItemListener(new TvRecyclerView.OnItemListener() {
-            @Override
-            public void onItemPreSelected(TvRecyclerView parent, View itemView, int position) {}
-            @Override
-            public void onItemSelected(TvRecyclerView parent, View itemView, int position) {
+            @Override public void onItemPreSelected(TvRecyclerView parent, View itemView, int position) {}
+            @Override public void onItemSelected(TvRecyclerView parent, View itemView, int position) {
                 if (groupAdapter != null) groupAdapter.setFocusedGroupIndex(position);
                 resetHideTimer();
             }
-            @Override
-            public void onItemClick(TvRecyclerView parent, View itemView, int position) {
+            @Override public void onItemClick(TvRecyclerView parent, View itemView, int position) {
                 FastClickCheckUtil.check(itemView);
                 resetHideTimer();
                 if (listener != null) listener.onGroupSelected(position);
@@ -376,17 +398,14 @@ public class LiveChannelListPanel {
         channelAdapter = new LiveChannelItemAdapter();
         channelView.setAdapter(channelAdapter);
         channelView.setOnItemListener(new TvRecyclerView.OnItemListener() {
-            @Override
-            public void onItemPreSelected(TvRecyclerView parent, View itemView, int position) {}
-            @Override
-            public void onItemSelected(TvRecyclerView parent, View itemView, int position) {
+            @Override public void onItemPreSelected(TvRecyclerView parent, View itemView, int position) {}
+            @Override public void onItemSelected(TvRecyclerView parent, View itemView, int position) {
                 if (position < 0) return;
                 if (groupAdapter != null) groupAdapter.setFocusedGroupIndex(-1);
                 if (channelAdapter != null) channelAdapter.setFocusedChannelIndex(position);
                 resetHideTimer();
             }
-            @Override
-            public void onItemClick(TvRecyclerView parent, View itemView, int position) { clickChannel(position); }
+            @Override public void onItemClick(TvRecyclerView parent, View itemView, int position) { clickChannel(position); }
         });
         channelAdapter.setOnItemClickListener((adapter, view, position) -> { FastClickCheckUtil.check(view); clickChannel(position); });
         channelView.addOnScrollListener(new RecyclerView.OnScrollListener() {
@@ -418,7 +437,6 @@ public class LiveChannelListPanel {
                     @Override
                     public void onAnimationEnd(Animator animation) {
                         rootView.setVisibility(View.INVISIBLE);
-                        // 可选：重置 EPG 视图状态
                         if (isEpgMode) {
                             setEpgViewsVisible(false);
                         } else {
