@@ -55,6 +55,7 @@ public class LivePlaybackManager {
         void onTimeoutReplay();
         void onShiyiModeChanged(boolean isShiyi, String timeRange);
         void onRequestChangeSource(int direction);
+        void showControlPanel();  // 新增
     }
 
     public LivePlaybackManager(@NonNull Context context, @NonNull Handler handler, @NonNull VideoView videoView) {
@@ -78,6 +79,9 @@ public class LivePlaybackManager {
             @Override public void changeSource(int direction) {
                 if (direction > 0) playNextSource();
                 else playPreSource();
+            }
+            @Override public void showControlPanel() {
+                if (listener != null) listener.showControlPanel();
             }
         });
         controller.setCanChangePosition(false);
@@ -162,10 +166,10 @@ public class LivePlaybackManager {
         videoView.release();
         currentChannel = channel;
         currentChannel.setinclude_back(currentChannel.getUrl().indexOf(LiveConstants.PLTV_FLAG + "8888") != -1);
-        playerManager.getLiveChannelPlayer(videoView, channel.getChannelName());
+        playerManager.getLiveChannelPlayer(videoView, currentChannel.getChannelName());
         this.currentPlayerType = playerManager.getLivePlayerType();
         this.currentScale = playerManager.getLivePlayerScale();
-        videoView.setUrl(channel.getUrl(), buildPlayHeaders(channel.getUrl()));
+        videoView.setUrl(currentChannel.getUrl(), buildPlayHeaders(currentChannel.getUrl()));
         videoView.start();
         if (listener != null) listener.onCurrentChannelChanged(channel, isChangeSource);
     }
@@ -310,4 +314,74 @@ public class LivePlaybackManager {
     public LiveChannelItem getCurrentChannel() { return currentChannel; }
     public int getCurrentScale() { return currentScale; }
     public int getCurrentPlayerType() { return currentPlayerType; }
+
+    // ========== 新增方法 ==========
+    public int getPlaybackType() {
+        if (isShiyiMode) return 1;
+        if (currentChannel != null && getDuration() > 0) return 2;
+        return 0;
+    }
+
+    public long getDraggableRange() {
+        if (getPlaybackType() == 0) {
+            return LiveConstants.LIVE_REPLAY_WINDOW_MS;
+        } else {
+            return getDuration();
+        }
+    }
+
+    public long getCurrentLiveTime() {
+        if (!isShiyiMode) return System.currentTimeMillis();
+        if (shiyiTime == null || !shiyiTime.contains("-")) return System.currentTimeMillis();
+        try {
+            String[] parts = shiyiTime.split("-");
+            SimpleDateFormat sdf = new SimpleDateFormat(LiveConstants.DATE_FORMAT_YMDHMS);
+            long start = sdf.parse(parts[0]).getTime();
+            return start + getCurrentPosition();
+        } catch (Exception e) {
+            return System.currentTimeMillis();
+        }
+    }
+
+    public void seekToLiveTime(long targetTimeMs) {
+        long now = System.currentTimeMillis();
+        long minTime = now - LiveConstants.LIVE_REPLAY_WINDOW_MS;
+        if (targetTimeMs < minTime) targetTimeMs = minTime;
+        if (targetTimeMs > now) targetTimeMs = now;
+        SimpleDateFormat sdf = new SimpleDateFormat(LiveConstants.DATE_FORMAT_YMDHMS);
+        String timeStr = sdf.format(targetTimeMs);
+        String timeRange = timeStr + "-" + sdf.format(now);
+        playShiyi(timeRange);
+    }
+
+    public void seekRelative(int seconds) {
+        long step = seconds * 1000L;
+        if (getPlaybackType() == 0) {
+            long newLiveTime = getCurrentLiveTime() + step;
+            seekToLiveTime(newLiveTime);
+        } else {
+            long newPos = getCurrentPosition() + step;
+            if (newPos < 0) newPos = 0;
+            long duration = getDuration();
+            if (newPos > duration) newPos = duration;
+            seekTo((int) newPos);
+        }
+    }
+
+    public void setSpeed(float speed) {
+        if (videoView != null) {
+            videoView.setSpeed(speed);
+        }
+    }
+
+    public float getCurrentSpeed() {
+        if (videoView != null) {
+            return videoView.getSpeed();
+        }
+        return 1.0f;
+    }
+
+    public boolean isPlaying() {
+        return videoView != null && videoView.isPlaying();
+    }
 }
