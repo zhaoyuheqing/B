@@ -11,10 +11,10 @@ public class LiveConstants {
     public static final int HIGH_PRIORITY_THREADS = 2;
     public static final int LOW_PRIORITY_THREADS = 1;
     public static final int PRELOAD_DELAY_MS = 5000;
-    public static final int PRELOAD_SLEEP_MS = 150;       // 当前频道预加载间隔
-    public static final int PRELOAD_OTHER_SLEEP_MS = 100;  // 其他频道预加载间隔
-    public static final int PRELOAD_DAYS_BEFORE = 6;       // 预加载往前天数
-    public static final int PRELOAD_DAYS_AFTER = 2;        // 预加载往后天数（总9天）
+    public static final int PRELOAD_SLEEP_MS = 150;
+    public static final int PRELOAD_OTHER_SLEEP_MS = 100;
+    public static final int PRELOAD_DAYS_BEFORE = 6;
+    public static final int PRELOAD_DAYS_AFTER = 2;
 
     // UI 自动隐藏延迟
     public static final int AUTO_HIDE_CHANNEL_LIST_MS = 6000;
@@ -37,7 +37,7 @@ public class LiveConstants {
 
     // 日期时间格式
     public static final String DATE_FORMAT_YMD = "yyyy-MM-dd";
-    public static final String DATE_FORMAT_YMD_NUM = "yyyyMMdd";   // 时移专用
+    public static final String DATE_FORMAT_YMD_NUM = "yyyyMMdd";
     public static final String DATE_FORMAT_YMDHMS = "yyyyMMddHHmmss";
     public static final String TIME_FORMAT_HHMM = "HH:mm";
     public static final String TIME_FORMAT_HHMMSS = "HH:mm:ss";
@@ -46,7 +46,7 @@ public class LiveConstants {
     public static final String NO_PROGRAM = "暂无节目信息";
     public static final String NO_INFO = "No Information";
 
-    // 频道号范围（数字换台最多支持20个分组）
+    // 频道号范围
     public static final int MAX_CHANNEL_GROUPS = 20;
 
     // 退出确认延迟
@@ -55,4 +55,10 @@ public class LiveConstants {
     // 其他
     public static final String DEFAULT_START_TIME = "00:00";
     public static final String DEFAULT_END_TIME = "23:59";
+
+    // ========== 控制面板相关 ==========
+    public static final float[] SPEEDS = {0.5f, 1.0f, 1.25f, 1.5f, 2.0f, 3.0f};
+    public static final long LIVE_REPLAY_WINDOW_MS = 24 * 60 * 60 * 1000L;
+    public static final long SEEK_STEP_MS = 10 * 1000L;
+    public static final long CONTROL_PANEL_AUTO_HIDE_MS = 5000L;
 }
