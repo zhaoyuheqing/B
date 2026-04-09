@@ -37,7 +37,6 @@ public class EpgCacheHelper {
     private final Handler mainHandler;
     private String epgBaseUrl;
     
-    // 缓存
     private final Map<String, ArrayList<Epginfo>> memoryCache = new LinkedHashMap<String, ArrayList<Epginfo>>() {
         @Override
         protected boolean removeEldestEntry(Map.Entry<String, ArrayList<Epginfo>> eldest) {
@@ -48,14 +47,10 @@ public class EpgCacheHelper {
     private final Set<String> pendingRequests = new HashSet<>();
     private final AtomicLong currentChannelRequestId = new AtomicLong(0);
     
-    // 线程池
     private ExecutorService highPriorityExecutor;
     private ExecutorService lowPriorityExecutor;
-    
-    // HTTP客户端
     private OkHttpClient httpClient;
     
-    // Logo回调
     public interface LogoCallback {
         void onLogoLoaded(String channelName, String logoUrl);
     }
@@ -78,13 +73,9 @@ public class EpgCacheHelper {
         this.logoCallback = callback;
     }
     
-    // ========== 公开方法 ==========
-    
     public ArrayList<Epginfo> getCachedEpg(String channelName, String dateStr) {
         ArrayList<Epginfo> cached = getFromMemoryCache(channelName, dateStr);
-        if (cached != null && !cached.isEmpty()) {
-            return cached;
-        }
+        if (cached != null && !cached.isEmpty()) return cached;
         cached = getFromFileCache(channelName, dateStr);
         if (cached != null && !cached.isEmpty()) {
             putToMemoryCache(channelName, dateStr, cached);
@@ -95,11 +86,9 @@ public class EpgCacheHelper {
     
     public void requestEpg(String channelName, Date date, EpgCallback callback, boolean isCurrentChannel) {
         if (channelName == null || date == null || callback == null) return;
-        
         SimpleDateFormat sdf = new SimpleDateFormat(LiveConstants.DATE_FORMAT_YMD);
         String dateStr = sdf.format(date);
         
-        // 1. 内存缓存
         ArrayList<Epginfo> cached = getFromMemoryCache(channelName, dateStr);
         if (cached != null && !cached.isEmpty()) {
             final String finalChannelName = channelName;
@@ -109,7 +98,6 @@ public class EpgCacheHelper {
             return;
         }
         
-        // 2. 文件缓存
         cached = getFromFileCache(channelName, dateStr);
         if (cached != null && !cached.isEmpty()) {
             putToMemoryCache(channelName, dateStr, cached);
@@ -120,25 +108,19 @@ public class EpgCacheHelper {
             return;
         }
         
-        // 3. 网络请求：只有当前频道请求才递增 ID
         final long requestId = isCurrentChannel ? currentChannelRequestId.incrementAndGet() : 0;
         final String reqChannelName = channelName;
         final Date reqDate = date;
         final String reqDateStr = dateStr;
-        highPriorityExecutor.execute(() -> {
-            fetchFromNetwork(reqChannelName, reqDate, reqDateStr, requestId, callback);
-        });
+        highPriorityExecutor.execute(() -> fetchFromNetwork(reqChannelName, reqDate, reqDateStr, requestId, callback));
     }
     
     public void preloadCurrentChannel(String channelName) {
         if (channelName == null) return;
-        
         List<String> dates = getPreloadDates();
         highPriorityExecutor.execute(() -> {
             for (String dateStr : dates) {
-                if (getCachedEpg(channelName, dateStr) != null) {
-                    continue;
-                }
+                if (getCachedEpg(channelName, dateStr) != null) continue;
                 String taskKey = channelName + "_" + dateStr;
                 synchronized (pendingRequests) {
                     if (pendingRequests.contains(taskKey)) continue;
@@ -155,14 +137,17 @@ public class EpgCacheHelper {
                         pendingRequests.remove(taskKey);
                     }
                 }
-                try { Thread.sleep(LiveConstants.PRELOAD_SLEEP_MS); } catch (InterruptedException e) { break; }
+                try {
+                    Thread.sleep(LiveConstants.PRELOAD_SLEEP_MS);
+                } catch (InterruptedException e) {
+                    break;
+                }
             }
         });
     }
     
     public void preloadOtherChannels(List<String> channelNames, String currentChannelName) {
         if (channelNames == null || channelNames.isEmpty()) return;
-        
         List<String> dates = getPreloadDates();
         lowPriorityExecutor.execute(() -> {
             for (String channelName : channelNames) {
@@ -184,7 +169,11 @@ public class EpgCacheHelper {
                             pendingRequests.remove(taskKey);
                         }
                     }
-                    try { Thread.sleep(LiveConstants.PRELOAD_OTHER_SLEEP_MS); } catch (InterruptedException e) { break; }
+                    try {
+                        Thread.sleep(LiveConstants.PRELOAD_OTHER_SLEEP_MS);
+                    } catch (InterruptedException e) {
+                        break;
+                    }
                 }
             }
         });
@@ -209,8 +198,6 @@ public class EpgCacheHelper {
         }
     }
     
-    // ========== 私有方法 ==========
-    
     private ArrayList<Epginfo> getFromMemoryCache(String channelName, String date) {
         String key = channelName + "_" + date;
         synchronized (cacheLock) {
@@ -233,6 +220,17 @@ public class EpgCacheHelper {
         return new File(dir, fileName);
     }
     
+    private Date combineDateAndTime(Date date, String timeStr) {
+        try {
+            SimpleDateFormat dateFormat = new SimpleDateFormat(LiveConstants.DATE_FORMAT_YMD);
+            SimpleDateFormat dateTimeFormat = new SimpleDateFormat(LiveConstants.DATE_FORMAT_YMD + " HH:mm");
+            String dateStr = dateFormat.format(date);
+            return dateTimeFormat.parse(dateStr + " " + timeStr);
+        } catch (Exception e) {
+            return date;
+        }
+    }
+    
     private ArrayList<Epginfo> getFromFileCache(String channelName, String date) {
         File cacheFile = getEpgCacheFile(channelName, date);
         if (!cacheFile.exists() || cacheFile.length() < 50) return null;
@@ -251,23 +249,41 @@ public class EpgCacheHelper {
                 cacheFile.delete();
                 return null;
             }
-            
             String logoUrl = cacheData.optString("logoUrl", null);
             if (logoUrl != null && !logoUrl.isEmpty() && logoCallback != null) {
-                mainHandler.post(() -> logoCallback.onLogoLoaded(channelName, logoUrl));
+                final String finalChannelName = channelName;
+                final String finalLogoUrl = logoUrl;
+                mainHandler.post(() -> logoCallback.onLogoLoaded(finalChannelName, finalLogoUrl));
             }
-            
             JSONArray epgArray = cacheData.optJSONArray("epgList");
             if (epgArray == null || epgArray.length() == 0) return null;
+            
             ArrayList<Epginfo> epgList = new ArrayList<>();
-            Date dateObj = parseDate(date);
+            Date baseDate = parseDate(date);
+            
             for (int i = 0; i < epgArray.length(); i++) {
                 JSONObject epgObj = epgArray.getJSONObject(i);
-                Epginfo epg = new Epginfo(dateObj, epgObj.optString("title", LiveConstants.NO_PROGRAM), dateObj,
-                        epgObj.optString("start", LiveConstants.DEFAULT_START_TIME),
-                        epgObj.optString("end", LiveConstants.DEFAULT_END_TIME), i);
-                epg.originStart = epgObj.optString("originStart", LiveConstants.DEFAULT_START_TIME);
-                epg.originEnd = epgObj.optString("originEnd", LiveConstants.DEFAULT_END_TIME);
+                String title = epgObj.optString("title", LiveConstants.NO_PROGRAM);
+                String startStr = epgObj.optString("start", LiveConstants.DEFAULT_START_TIME);
+                String endStr = epgObj.optString("end", LiveConstants.DEFAULT_END_TIME);
+                String originStart = epgObj.optString("originStart", startStr);
+                String originEnd = epgObj.optString("originEnd", endStr);
+                
+                // 构造正确的时间（处理跨天）
+                Date startDateTime = combineDateAndTime(baseDate, startStr);
+                Date endDateTime = combineDateAndTime(baseDate, endStr);
+                if (endDateTime.before(startDateTime)) {
+                    Calendar cal = Calendar.getInstance();
+                    cal.setTime(endDateTime);
+                    cal.add(Calendar.DAY_OF_MONTH, 1);
+                    endDateTime = cal.getTime();
+                }
+                
+                Epginfo epg = new Epginfo(baseDate, title, baseDate, startStr, endStr, i);
+                epg.startdateTime = startDateTime;
+                epg.enddateTime = endDateTime;
+                epg.originStart = originStart;
+                epg.originEnd = originEnd;
                 epgList.add(epg);
             }
             return epgList;
@@ -368,7 +384,6 @@ public class EpgCacheHelper {
                     epgTagName = epgInfo[1];
                 }
             }
-            
             String epgUrl;
             if (epgBaseUrl.contains("{name}") && epgBaseUrl.contains("{date}")) {
                 epgUrl = epgBaseUrl.replace("{name}", URLEncoder.encode(epgTagName, "UTF-8"))
@@ -392,9 +407,25 @@ public class EpgCacheHelper {
                                 int length = Math.min(jSONArray.length(), LiveConstants.EPG_MAX_ITEMS);
                                 for (int b = 0; b < length; b++) {
                                     JSONObject jSONObject = jSONArray.getJSONObject(b);
-                                    Epginfo epg = new Epginfo(date, jSONObject.optString("title", LiveConstants.NO_PROGRAM),
-                                            date, jSONObject.optString("start", LiveConstants.DEFAULT_START_TIME),
-                                            jSONObject.optString("end", LiveConstants.DEFAULT_END_TIME), b);
+                                    String title = jSONObject.optString("title", LiveConstants.NO_PROGRAM);
+                                    String startStr = jSONObject.optString("start", LiveConstants.DEFAULT_START_TIME);
+                                    String endStr = jSONObject.optString("end", LiveConstants.DEFAULT_END_TIME);
+                                    
+                                    // 构造正确的时间（处理跨天）
+                                    Date startDateTime = combineDateAndTime(date, startStr);
+                                    Date endDateTime = combineDateAndTime(date, endStr);
+                                    if (endDateTime.before(startDateTime)) {
+                                        Calendar cal = Calendar.getInstance();
+                                        cal.setTime(endDateTime);
+                                        cal.add(Calendar.DAY_OF_MONTH, 1);
+                                        endDateTime = cal.getTime();
+                                    }
+                                    
+                                    Epginfo epg = new Epginfo(date, title, date, startStr, endStr, b);
+                                    epg.startdateTime = startDateTime;
+                                    epg.enddateTime = endDateTime;
+                                    epg.originStart = startStr;
+                                    epg.originEnd = endStr;
                                     arrayList.add(epg);
                                 }
                             }
@@ -404,7 +435,6 @@ public class EpgCacheHelper {
                     }
                     if (!arrayList.isEmpty()) {
                         saveToFileCache(channelName, dateStr, arrayList, logoUrl);
-                        // 只有 requestId != 0 且与当前请求匹配时才回调 UI
                         if (callback != null && requestId != 0 && requestId == currentChannelRequestId.get()) {
                             final String finalChannelName = channelName;
                             final Date finalDate = date;
