@@ -192,11 +192,11 @@ public class LivePlaybackManager {
 
     /**
      * 普通回放（由 EPG 点击触发）
+     * 注意：不要在这里重置 isLive24hMode，因为拖动触发的回放也会调用此方法
      */
     public void playShiyi(String shiyiTimeRange) {
         if (currentChannel == null || videoView == null) return;
-        // EPG 回放不是进度条模式，重置标志
-        setLive24hMode(false);
+        // 不要重置 isLive24hMode，由调用者决定
         isShiyiMode = true;
         shiyiTime = shiyiTimeRange;
         if (listener != null) listener.onShiyiModeChanged(true, shiyiTimeRange);
@@ -208,7 +208,7 @@ public class LivePlaybackManager {
 
     public void playNextSource() {
         if (listener != null) listener.onRequestChangeSource(1);
-        setLive24hMode(false); // 切换线路重置模式
+        setLive24hMode(false);
     }
 
     public void playPreSource() {
@@ -351,14 +351,15 @@ public class LivePlaybackManager {
 
     /**
      * 获取播放类型
-     * 0: 纯直播（未时移）
+     * 0: 纯直播（未时移，无固定时长）
      * 1: 普通回放（EPG触发）
-     * 2: 点播（视频文件）
-     * 3: 直播进度条模式（24h窗口+分段）
+     * 2: 点播（有固定时长）
+     * 3: 直播进度条模式（由拖动触发）
      */
     public int getPlaybackType() {
         if (isShiyiMode && isLive24hMode) return 3;
         if (isShiyiMode) return 1;
+        // 如果有固定时长且大于0，视为点播
         if (currentChannel != null && getDuration() > 0) return 2;
         return 0;
     }
@@ -428,11 +429,6 @@ public class LivePlaybackManager {
      * 相对跳转（±10秒）
      */
     public void seekRelative(int seconds) {
-        boolean isLiveChannel = currentChannel != null && currentChannel.getUrl().contains(LiveConstants.PLTV_FLAG);
-        // 如果是直播频道且当前未处于进度条模式，则自动开启
-        if (isLiveChannel && !isLive24hMode && getPlaybackType() != 2) {
-            setLive24hMode(true);
-        }
         if (isLive24hMode) {
             long currentLiveTime = getCurrentLiveTime();
             long newTime = currentLiveTime + seconds * 1000L;
@@ -441,7 +437,7 @@ public class LivePlaybackManager {
             if (newTime < minTime) newTime = minTime;
             if (newTime > now) newTime = now;
             seekToLiveTimeSegment(newTime, true);
-        } else {
+        } else if (getPlaybackType() == 2) {
             long newPos = getCurrentPosition() + seconds * 1000L;
             if (newPos < 0) newPos = 0;
             long duration = getDuration();
