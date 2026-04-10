@@ -472,7 +472,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
 
         // 控制面板容器和面板
         controlPanelContainer = findViewById(R.id.control_panel_container);
-        controlPanel = new LiveControlPanel(this, controlPanelContainer, playbackManager, mHandler);
+        controlPanel = new LiveControlPanel(this, controlPanelContainer, playbackManager, epgCacheHelper, mHandler);
 
         tvTime = findViewById(R.id.tvTime);
         tvNetSpeed = findViewById(R.id.tvNetSpeed);
