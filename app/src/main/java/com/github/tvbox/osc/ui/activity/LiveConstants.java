@@ -60,17 +60,15 @@ public class LiveConstants {
     public static final String DEFAULT_START_TIME = "00:00";
     public static final String DEFAULT_END_TIME = "23:59";
 
-    // ========== 控制面板相关（24小时窗口，分段） ==========
+    // ========== 控制面板相关 ==========
     public static final float[] SPEEDS = {0.5f, 1.0f, 1.25f, 1.5f, 2.0f, 3.0f};
     public static final long LIVE_REPLAY_WINDOW_MS = 24 * 60 * 60 * 1000L;   // 24小时
-    public static final long SEGMENT_DURATION_MS = 8 * 60 * 60 * 1000L;       // 8小时（一段）
-    public static final int SEGMENT_COUNT = 3;                                 // 共3段
-    public static final long CONTROL_PANEL_AUTO_HIDE_MS = 5000L;               // 5秒自动隐藏
+    public static final long SEGMENT_DURATION_MS = 8 * 60 * 60 * 1000L;       // 8小时
+    public static final int SEGMENT_COUNT = 3;                                 // 3段
+    public static final long CONTROL_PANEL_AUTO_HIDE_MS = 5000L;
 
     /**
      * 获取 GMT+8 时区的 SimpleDateFormat
-     * @param pattern 日期格式
-     * @return 已设置时区的格式化器
      */
     public static SimpleDateFormat getGMT8Formatter(String pattern) {
         SimpleDateFormat sdf = new SimpleDateFormat(pattern, Locale.getDefault());
