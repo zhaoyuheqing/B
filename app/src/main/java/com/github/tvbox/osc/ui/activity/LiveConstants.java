@@ -65,10 +65,20 @@ public class LiveConstants {
     public static final long LIVE_REPLAY_WINDOW_MS = 24 * 60 * 60 * 1000L;   // 24小时
     public static final long SEGMENT_DURATION_MS = 8 * 60 * 60 * 1000L;       // 8小时
     public static final int SEGMENT_COUNT = 3;                                 // 3段
-    public static final long CONTROL_PANEL_AUTO_HIDE_MS = 5000L;
+    public static final long CONTROL_PANEL_AUTO_HIDE_MS = 5000L;               // 5秒自动隐藏
+    public static final long SEGMENT_SWITCH_THRESHOLD_MS = 8000L;              // 提前8秒切换
 
     /**
-     * 获取 GMT+8 时区的 SimpleDateFormat
+     * 获取 GMT+8 时区的 SimpleDateFormat（带秒）
+     */
+    public static SimpleDateFormat getGMT8FormatterWithSeconds() {
+        SimpleDateFormat sdf = new SimpleDateFormat(TIME_FORMAT_HHMMSS, Locale.getDefault());
+        sdf.setTimeZone(TimeZone.getTimeZone("GMT+8"));
+        return sdf;
+    }
+
+    /**
+     * 获取 GMT+8 时区的 SimpleDateFormat（自定义格式）
      */
     public static SimpleDateFormat getGMT8Formatter(String pattern) {
         SimpleDateFormat sdf = new SimpleDateFormat(pattern, Locale.getDefault());
