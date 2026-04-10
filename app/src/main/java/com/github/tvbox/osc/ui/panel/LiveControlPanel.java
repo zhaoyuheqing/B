@@ -10,6 +10,7 @@ import android.widget.SeekBar;
 import android.widget.TextView;
 
 import com.github.tvbox.osc.R;
+import com.github.tvbox.osc.bean.Epginfo;
 import com.github.tvbox.osc.constant.LiveConstants;
 import com.github.tvbox.osc.player.controller.LivePlaybackManager;
 import com.github.tvbox.osc.util.EpgCacheHelper;
@@ -64,14 +65,20 @@ public class LiveControlPanel {
         tvCurrentEpg = panelView.findViewById(R.id.control_current_epg);
 
         btnPlayPause.setOnClickListener(v -> togglePlayPause());
-        btnRewind10.setOnClickListener(v -> playbackManager.seekRelative(-10));
-        btnForward10.setOnClickListener(v -> playbackManager.seekRelative(10));
+        btnRewind10.setOnClickListener(v -> onSeekRelative(-10));
+        btnForward10.setOnClickListener(v -> onSeekRelative(10));
         btnSpeed.setOnClickListener(v -> cycleSpeed());
 
         seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                if (fromUser) updateTimeByProgress(progress);
+                if (fromUser) {
+                    updateTimeByProgress(progress);
+                    if (playbackManager.getPlaybackType() == 0) {
+                        long targetTime = getLiveTimeFromProgress(progress);
+                        updateEpgByTime(targetTime);
+                    }
+                }
             }
 
             @Override
@@ -81,15 +88,14 @@ public class LiveControlPanel {
 
             @Override
             public void onStopTrackingTouch(SeekBar seekBar) {
-                long targetPosMs = (long) seekBar.getProgress() * 1000L;
+                int progress = seekBar.getProgress();
                 if (playbackManager.getPlaybackType() == 0) {
-                    long now = System.currentTimeMillis();
-                    long targetTime = now - (LiveConstants.LIVE_REPLAY_WINDOW_MS - targetPosMs);
+                    long targetTime = getLiveTimeFromProgress(progress);
                     playbackManager.seekToLiveTime(targetTime);
                 } else {
+                    long targetPosMs = (long) progress * 1000L;
                     playbackManager.seekTo((int) targetPosMs);
                 }
-                // 重置自动隐藏计时器，不立即隐藏面板
                 handler.removeCallbacks(autoHideRunnable);
                 handler.postDelayed(autoHideRunnable, LiveConstants.CONTROL_PANEL_AUTO_HIDE_MS);
             }
@@ -102,9 +108,29 @@ public class LiveControlPanel {
         Log.d(TAG, "Control panel initialized");
     }
 
+    // ========== 直播模式进度条辅助方法 ==========
+    // 根据进度值（秒）计算直播模式下的绝对时间（毫秒）
+    // progress: 0 表示当前时间（最右端），maxSec 表示24小时前（最左端）
+    private long getLiveTimeFromProgress(int progressSec) {
+        long maxSec = LiveConstants.LIVE_REPLAY_WINDOW_MS / 1000;
+        long now = System.currentTimeMillis();
+        long offsetSec = maxSec - progressSec;
+        return now - offsetSec * 1000;
+    }
+
+    // 根据绝对时间（毫秒）计算进度条位置（直播模式）
+    private int getProgressFromLiveTime(long targetTimeMs) {
+        long now = System.currentTimeMillis();
+        long maxSec = LiveConstants.LIVE_REPLAY_WINDOW_MS / 1000;
+        long diffSec = (now - targetTimeMs) / 1000;
+        if (diffSec < 0) diffSec = 0;
+        if (diffSec > maxSec) diffSec = maxSec;
+        return (int) (maxSec - diffSec);
+    }
+
+    // ========== 公共方法 ==========
     public void show() {
         if (isVisible) return;
-        Log.d(TAG, "show() called");
         updateUI();
         container.setVisibility(View.VISIBLE);
         container.bringToFront();
@@ -112,12 +138,10 @@ public class LiveControlPanel {
         isVisible = true;
         handler.removeCallbacks(autoHideRunnable);
         handler.postDelayed(autoHideRunnable, LiveConstants.CONTROL_PANEL_AUTO_HIDE_MS);
-        Log.d(TAG, "Panel shown");
     }
 
     public void hide() {
         if (!isVisible) return;
-        Log.d(TAG, "hide() called");
         panelView.setVisibility(View.GONE);
         container.setVisibility(View.GONE);
         isVisible = false;
@@ -132,6 +156,7 @@ public class LiveControlPanel {
         if (isVisible) updateUI();
     }
 
+    // ========== UI 更新 ==========
     private void updateUI() {
         String programName = playbackManager.getCurrentChannel() != null ?
                 playbackManager.getCurrentChannel().getChannelName() : "直播";
@@ -140,59 +165,72 @@ public class LiveControlPanel {
         float speed = playbackManager.getCurrentSpeed();
         btnSpeed.setText(String.format(Locale.US, "倍速 %.1fx", speed));
 
-        long rangeMs = playbackManager.getDraggableRange();
-        long currentPosMs;
         if (playbackManager.getPlaybackType() == 0) {
-            seekBar.setMax((int) (rangeMs / 1000));
+            // 直播模式
             long now = System.currentTimeMillis();
             long liveTime = playbackManager.getCurrentLiveTime();
-            long offset = now - liveTime;
-            if (offset < 0) offset = 0;
-            if (offset > rangeMs) offset = rangeMs;
-            currentPosMs = offset;
+            long maxSec = LiveConstants.LIVE_REPLAY_WINDOW_MS / 1000;
+            seekBar.setMax((int) maxSec);
+            int progress = getProgressFromLiveTime(liveTime);
+            seekBar.setProgress(progress);
+            // 更新时间显示
+            SimpleDateFormat sdf = new SimpleDateFormat("HH:mm", Locale.getDefault());
+            tvCurrentTime.setText(sdf.format(new Date(now)));      // 右侧当前时间
+            tvTotalTime.setText(sdf.format(new Date(liveTime)));   // 左侧回放点时间
+            // 更新节目信息
+            updateEpgByTime(liveTime);
         } else {
-            seekBar.setMax((int) (rangeMs / 1000));
-            currentPosMs = playbackManager.getCurrentPosition();
+            // 点播/回放模式
+            long duration = playbackManager.getDuration();
+            long currentPos = playbackManager.getCurrentPosition();
+            seekBar.setMax((int) (duration / 1000));
+            seekBar.setProgress((int) (currentPos / 1000));
+            tvCurrentTime.setText(formatTime(currentPos));
+            tvTotalTime.setText(formatTime(duration));
         }
-        seekBar.setProgress((int) (currentPosMs / 1000));
-        updateTimeDisplay(currentPosMs, rangeMs);
 
         btnPlayPause.setText(playbackManager.isPlaying() ? "暂停" : "播放");
 
-        // 更新日期和星期
         SimpleDateFormat dateFormat = new SimpleDateFormat("MM月dd日 EEEE", Locale.CHINA);
         tvDateWeek.setText(dateFormat.format(new Date()));
-
-        // 更新当前节目信息
-        String epgInfo = getCurrentEpgInfo();
-        tvCurrentEpg.setText(epgInfo);
-    }
-
-    private void updateTimeDisplay(long currentMs, long totalMs) {
-        if (playbackManager.getPlaybackType() == 0) {
-            long liveTime = playbackManager.getCurrentLiveTime();
-            SimpleDateFormat sdf = new SimpleDateFormat("HH:mm", Locale.getDefault());
-            tvCurrentTime.setText(sdf.format(new Date(liveTime)));
-            tvTotalTime.setText("直播");
-        } else {
-            tvCurrentTime.setText(formatTime(currentMs));
-            tvTotalTime.setText(formatTime(totalMs));
-        }
     }
 
     private void updateTimeByProgress(int progressSec) {
-        long progressMs = progressSec * 1000L;
         if (playbackManager.getPlaybackType() == 0) {
+            long targetTime = getLiveTimeFromProgress(progressSec);
             long now = System.currentTimeMillis();
-            long targetTime = now - (LiveConstants.LIVE_REPLAY_WINDOW_MS - progressMs);
             SimpleDateFormat sdf = new SimpleDateFormat("HH:mm", Locale.getDefault());
-            tvCurrentTime.setText(sdf.format(new Date(targetTime)));
-            tvTotalTime.setText("直播");
+            tvCurrentTime.setText(sdf.format(new Date(now)));
+            tvTotalTime.setText(sdf.format(new Date(targetTime)));
         } else {
+            long progressMs = progressSec * 1000L;
             tvCurrentTime.setText(formatTime(progressMs));
             long totalMs = playbackManager.getDraggableRange();
             tvTotalTime.setText(formatTime(totalMs));
         }
+    }
+
+    private void updateEpgByTime(long absoluteTimeMs) {
+        if (playbackManager.getCurrentChannel() == null || epgCacheHelper == null) {
+            tvCurrentEpg.setText("暂无节目信息");
+            return;
+        }
+        String channelName = playbackManager.getCurrentChannel().getChannelName();
+        SimpleDateFormat sdf = new SimpleDateFormat(LiveConstants.DATE_FORMAT_YMD);
+        String dateStr = sdf.format(new Date(absoluteTimeMs));
+        ArrayList<Epginfo> epgList = epgCacheHelper.getCachedEpg(channelName, dateStr);
+        if (epgList == null || epgList.isEmpty()) {
+            tvCurrentEpg.setText("暂无节目信息");
+            return;
+        }
+        Date targetDate = new Date(absoluteTimeMs);
+        for (Epginfo epg : epgList) {
+            if (targetDate.after(epg.startdateTime) && targetDate.before(epg.enddateTime)) {
+                tvCurrentEpg.setText("正在播放：" + epg.title + " " + epg.start + "-" + epg.end);
+                return;
+            }
+        }
+        tvCurrentEpg.setText("暂无节目信息");
     }
 
     private String formatTime(long ms) {
@@ -207,6 +245,7 @@ public class LiveControlPanel {
         }
     }
 
+    // ========== 交互事件 ==========
     private void togglePlayPause() {
         if (playbackManager.isPlaying()) {
             playbackManager.pause();
@@ -232,20 +271,36 @@ public class LiveControlPanel {
         btnSpeed.setText(String.format(Locale.US, "倍速 %.1fx", newSpeed));
     }
 
-    private String getCurrentEpgInfo() {
-        if (playbackManager.getCurrentChannel() == null) return "暂无节目信息";
-        String channelName = playbackManager.getCurrentChannel().getChannelName();
-        if (epgCacheHelper == null) return "暂无节目信息";
-        SimpleDateFormat sdf = new SimpleDateFormat(LiveConstants.DATE_FORMAT_YMD);
-        String today = sdf.format(new Date());
-        ArrayList<com.github.tvbox.osc.bean.Epginfo> epgList = epgCacheHelper.getCachedEpg(channelName, today);
-        if (epgList == null || epgList.isEmpty()) return "暂无节目信息";
-        Date now = new Date();
-        for (com.github.tvbox.osc.bean.Epginfo epg : epgList) {
-            if (now.after(epg.startdateTime) && now.before(epg.enddateTime)) {
-                return "正在播放：" + epg.title + " " + epg.start + "-" + epg.end;
-            }
+    private void onSeekRelative(int seconds) {
+        if (playbackManager.getPlaybackType() == 0) {
+            // 直播模式
+            long currentLiveTime = playbackManager.getCurrentLiveTime();
+            long newTime = currentLiveTime + seconds * 1000L;
+            long now = System.currentTimeMillis();
+            long minTime = now - LiveConstants.LIVE_REPLAY_WINDOW_MS;
+            if (newTime < minTime) newTime = minTime;
+            if (newTime > now) newTime = now;
+            playbackManager.seekToLiveTime(newTime);
+            // 更新 UI
+            int newProgress = getProgressFromLiveTime(newTime);
+            seekBar.setProgress(newProgress);
+            SimpleDateFormat sdf = new SimpleDateFormat("HH:mm", Locale.getDefault());
+            tvCurrentTime.setText(sdf.format(new Date(now)));
+            tvTotalTime.setText(sdf.format(new Date(newTime)));
+            updateEpgByTime(newTime);
+        } else {
+            // 点播/回放模式
+            long currentPos = playbackManager.getCurrentPosition();
+            long newPos = currentPos + seconds * 1000L;
+            if (newPos < 0) newPos = 0;
+            long duration = playbackManager.getDuration();
+            if (newPos > duration) newPos = duration;
+            playbackManager.seekTo((int) newPos);
+            seekBar.setProgress((int) (newPos / 1000));
+            tvCurrentTime.setText(formatTime(newPos));
         }
-        return "暂无节目信息";
+        // 重置自动隐藏计时器
+        handler.removeCallbacks(autoHideRunnable);
+        handler.postDelayed(autoHideRunnable, LiveConstants.CONTROL_PANEL_AUTO_HIDE_MS);
     }
 }
