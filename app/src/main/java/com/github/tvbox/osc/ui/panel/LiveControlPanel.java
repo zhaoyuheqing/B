@@ -3,6 +3,7 @@ package com.github.tvbox.osc.ui.panel;
 import android.content.Context;
 import android.os.Handler;
 import android.util.Log;
+import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.FrameLayout;
@@ -32,8 +33,8 @@ public class LiveControlPanel {
     private SeekBar seekBar;
     private TextView tvProgramName;
     private TextView btnSpeed;
-    private TextView tvCurrentTime;
-    private TextView tvTotalTime;
+    private TextView tvCurrentTime;   // 左侧时间
+    private TextView tvTotalTime;     // 右侧时间
     private TextView btnPlayPause;
     private TextView btnRewind10;
     private TextView btnForward10;
@@ -42,11 +43,25 @@ public class LiveControlPanel {
     private boolean isVisible = false;
     private final Runnable autoHideRunnable = this::hide;
 
+    // 连续点击防抖
     private long pendingSeekOffset = 0;
     private final Runnable pendingSeekRunnable = this::executePendingSeek;
 
+    // 衔接防重复标志
     private boolean isPreparingNextSegment = false;
 
+    // 焦点模式
+    private boolean isButtonFocusMode = false;
+    // 普通回放时预设的EPG信息
+    private String currentEpgInfo = "";
+    // 长按拖动相关
+    private Handler longPressHandler = new Handler();
+    private Runnable longPressRunnable;
+    private int longPressKeyCode = 0;
+    private static final long LONG_PRESS_DELAY = 500;
+    private static final long REPEAT_INTERVAL = 100;
+
+    // 每秒刷新定时器
     private final Runnable liveProgressUpdater = new Runnable() {
         @Override
         public void run() {
@@ -110,7 +125,7 @@ public class LiveControlPanel {
                 if (playbackManager.isLive24hMode()) {
                     long targetTime = getLiveTimeFromProgress(progress);
                     playbackManager.seekToLiveTimeSegment(targetTime, true);
-                } else if (playbackManager.getPlaybackType() == 2) {
+                } else if (playbackManager.getPlaybackType() == 2 || playbackManager.getPlaybackType() == 1) {
                     long targetPosMs = (long) progress * 1000L;
                     playbackManager.seekTo((int) targetPosMs);
                 }
@@ -127,6 +142,7 @@ public class LiveControlPanel {
         Log.d(TAG, "Control panel initialized");
     }
 
+    // ========== 辅助方法 ==========
     private SimpleDateFormat getTimeFormatter() {
         SimpleDateFormat sdf = new SimpleDateFormat(LiveConstants.TIME_FORMAT_HHMMSS, Locale.getDefault());
         sdf.setTimeZone(TimeZone.getTimeZone("GMT+8"));
@@ -135,8 +151,9 @@ public class LiveControlPanel {
 
     private void updateTimeDisplayForLive(long targetTime, long now) {
         SimpleDateFormat sdf = getTimeFormatter();
-        tvCurrentTime.setText(sdf.format(new Date(now)));
-        tvTotalTime.setText(sdf.format(new Date(targetTime)));
+        // 左侧显示回放点时间，右侧显示当前时间
+        tvCurrentTime.setText(sdf.format(new Date(targetTime)));
+        tvTotalTime.setText(sdf.format(new Date(now)));
     }
 
     private long getLiveTimeFromProgress(int progressSec) {
@@ -190,6 +207,7 @@ public class LiveControlPanel {
         }
     }
 
+    // ========== UI 更新 ==========
     private void updateUI() {
         String programName = playbackManager.getCurrentChannel() != null ?
                 playbackManager.getCurrentChannel().getChannelName() : "直播";
@@ -216,6 +234,27 @@ public class LiveControlPanel {
                 tvCurrentTime.setText(formatTime(currentPos));
                 tvTotalTime.setText(formatTime(duration));
             }
+            tvCurrentEpg.setText("");
+        } else if (playbackManager.getPlaybackType() == 1) {
+            // 普通回放（EPG触发的时移）
+            long duration = playbackManager.getDuration();
+            long currentPos = playbackManager.getCurrentPosition();
+            if (duration > 0) {
+                seekBar.setMax((int) (duration / 1000));
+                seekBar.setProgress((int) (currentPos / 1000));
+                tvCurrentTime.setText(formatTime(currentPos));
+                tvTotalTime.setText(formatTime(duration));
+            } else {
+                long now = System.currentTimeMillis();
+                long maxSec = LiveConstants.LIVE_REPLAY_WINDOW_MS / 1000;
+                seekBar.setMax((int) maxSec);
+                seekBar.setProgress((int) maxSec);
+                SimpleDateFormat sdf = getTimeFormatter();
+                tvCurrentTime.setText(sdf.format(new Date(now)));
+                tvTotalTime.setText("回放");
+            }
+            // 直接显示预设的EPG信息
+            tvCurrentEpg.setText(currentEpgInfo);
         } else {
             // 纯直播视觉模式
             long now = System.currentTimeMillis();
@@ -247,11 +286,33 @@ public class LiveControlPanel {
             long duration = playbackManager.getDuration();
             long currentPos = playbackManager.getCurrentPosition();
             if (duration > 0) {
-                seekBar.setMax((int) (duration / 1000));
+                if (seekBar.getMax() != (int) (duration / 1000)) {
+                    seekBar.setMax((int) (duration / 1000));
+                }
                 seekBar.setProgress((int) (currentPos / 1000));
                 tvCurrentTime.setText(formatTime(currentPos));
                 tvTotalTime.setText(formatTime(duration));
             }
+        } else if (playbackManager.getPlaybackType() == 1) {
+            long duration = playbackManager.getDuration();
+            long currentPos = playbackManager.getCurrentPosition();
+            if (duration > 0) {
+                if (seekBar.getMax() != (int) (duration / 1000)) {
+                    seekBar.setMax((int) (duration / 1000));
+                }
+                seekBar.setProgress((int) (currentPos / 1000));
+                tvCurrentTime.setText(formatTime(currentPos));
+                tvTotalTime.setText(formatTime(duration));
+            } else {
+                long now = System.currentTimeMillis();
+                long maxSec = LiveConstants.LIVE_REPLAY_WINDOW_MS / 1000;
+                if (seekBar.getMax() != (int) maxSec) seekBar.setMax((int) maxSec);
+                if (seekBar.getProgress() != (int) maxSec) seekBar.setProgress((int) maxSec);
+                SimpleDateFormat sdf = getTimeFormatter();
+                tvCurrentTime.setText(sdf.format(new Date(now)));
+                tvTotalTime.setText("回放");
+            }
+            // EPG信息保持不变（不动态更新）
         } else if (playbackManager.getPlaybackType() == 0) {
             long now = System.currentTimeMillis();
             long maxSec = LiveConstants.LIVE_REPLAY_WINDOW_MS / 1000;
@@ -268,7 +329,7 @@ public class LiveControlPanel {
             long targetTime = getLiveTimeFromProgress(progressSec);
             long now = System.currentTimeMillis();
             updateTimeDisplayForLive(targetTime, now);
-        } else if (playbackManager.getPlaybackType() == 2) {
+        } else if (playbackManager.getPlaybackType() == 2 || playbackManager.getPlaybackType() == 1) {
             long progressMs = progressSec * 1000L;
             tvCurrentTime.setText(formatTime(progressMs));
             long totalMs = playbackManager.getDuration();
@@ -289,6 +350,7 @@ public class LiveControlPanel {
         }
     }
 
+    // ========== 交互事件 ==========
     private void togglePlayPause() {
         if (playbackManager.isPlaying()) {
             playbackManager.pause();
@@ -339,7 +401,7 @@ public class LiveControlPanel {
             seekBar.setProgress(newProgress);
             updateTimeDisplayForLive(newTime, now);
             updateEpgByTime(newTime);
-        } else if (playbackManager.getPlaybackType() == 2) {
+        } else if (playbackManager.getPlaybackType() == 2 || playbackManager.getPlaybackType() == 1) {
             long currentPos = playbackManager.getCurrentPosition();
             long newPos = currentPos + offset;
             if (newPos < 0) newPos = 0;
@@ -353,6 +415,114 @@ public class LiveControlPanel {
         handler.postDelayed(autoHideRunnable, LiveConstants.CONTROL_PANEL_AUTO_HIDE_MS);
     }
 
+    // ========== 遥控器按键处理 ==========
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (!isVisible) return false;
+        int action = event.getAction();
+        int keyCode = event.getKeyCode();
+
+        // 返回键：隐藏面板
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            if (action == KeyEvent.ACTION_DOWN) {
+                hide();
+            }
+            return true;
+        }
+
+        // 左右键处理（默认模式）
+        if (!isButtonFocusMode && (keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT)) {
+            if (action == KeyEvent.ACTION_DOWN) {
+                startLongPressRepeat(keyCode);
+            } else if (action == KeyEvent.ACTION_UP) {
+                boolean wasLongPress = (longPressRunnable != null);
+                stopLongPressRepeat();
+                if (!wasLongPress) {
+                    if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+                        playbackManager.seekRelative(-10);
+                    } else {
+                        playbackManager.seekRelative(10);
+                    }
+                    updateUI();
+                }
+            }
+            return true;
+        }
+
+        // 确定键
+        if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
+            if (action == KeyEvent.ACTION_DOWN) {
+                if (isButtonFocusMode) {
+                    View focused = panelView.findFocus();
+                    if (focused != null && focused != panelView) {
+                        focused.performClick();
+                    }
+                } else {
+                    togglePlayPause();
+                }
+            }
+            return true;
+        }
+
+        // 上下键：切换焦点模式或移动焦点
+        if (keyCode == KeyEvent.KEYCODE_DPAD_UP || keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+            if (action == KeyEvent.ACTION_DOWN) {
+                if (!isButtonFocusMode) {
+                    enterButtonFocusMode();
+                } else {
+                    moveFocus(keyCode == KeyEvent.KEYCODE_DPAD_UP ? View.FOCUS_UP : View.FOCUS_DOWN);
+                }
+            }
+            return true;
+        }
+
+        return false;
+    }
+
+    private void startLongPressRepeat(int keyCode) {
+        if (longPressRunnable != null) return;
+        longPressKeyCode = keyCode;
+        longPressRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (longPressKeyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+                    playbackManager.seekRelative(-1);
+                } else {
+                    playbackManager.seekRelative(1);
+                }
+                updateUI();
+                longPressHandler.postDelayed(this, REPEAT_INTERVAL);
+            }
+        };
+        longPressHandler.postDelayed(longPressRunnable, LONG_PRESS_DELAY);
+    }
+
+    private void stopLongPressRepeat() {
+        if (longPressRunnable != null) {
+            longPressHandler.removeCallbacks(longPressRunnable);
+            longPressRunnable = null;
+        }
+    }
+
+    // ========== 焦点管理 ==========
+    private void enterButtonFocusMode() {
+        isButtonFocusMode = true;
+        btnSpeed.requestFocus();
+    }
+
+    private void exitButtonFocusMode() {
+        isButtonFocusMode = false;
+        View focused = panelView.findFocus();
+        if (focused != null) focused.clearFocus();
+    }
+
+    private void moveFocus(int direction) {
+        View current = panelView.findFocus();
+        if (current == null) return;
+        View next = current.focusSearch(direction);
+        if (next != null) next.requestFocus();
+    }
+
+    // ========== 公共方法 ==========
     public void show() {
         if (isVisible) return;
         updateUI();
@@ -369,6 +539,7 @@ public class LiveControlPanel {
 
     public void hide() {
         if (!isVisible) return;
+        exitButtonFocusMode();
         panelView.setVisibility(View.GONE);
         container.setVisibility(View.GONE);
         isVisible = false;
@@ -383,5 +554,19 @@ public class LiveControlPanel {
 
     public void refresh() {
         if (isVisible) updateUI();
+    }
+
+    public void setCurrentEpgInfo(String epgInfo) {
+        this.currentEpgInfo = epgInfo;
+    }
+
+    public boolean isPointInside(int x, int y) {
+        int[] location = new int[2];
+        panelView.getLocationOnScreen(location);
+        android.graphics.Rect rect = new android.graphics.Rect(
+                location[0], location[1],
+                location[0] + panelView.getWidth(),
+                location[1] + panelView.getHeight());
+        return rect.contains(x, y);
     }
 }
