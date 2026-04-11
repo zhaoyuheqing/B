@@ -297,6 +297,9 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
             @Override
             public boolean onSingleTap(MotionEvent e) {
                 if (controlPanel != null && controlPanel.isShowing()) {
+                    if (!controlPanel.isPointInside((int) e.getX(), (int) e.getY())) {
+                        controlPanel.hide();
+                    }
                     return true;
                 }
                 return handleSingleTap(e);
@@ -584,7 +587,9 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
                 return;
             }
             String shiyiRange = shiyiStartdate + "-" + shiyiEnddate;
-            // EPG 回放前重置直播进度条模式
+            // 设置 EPG 信息到控制面板
+            String epgInfo = "正在播放：" + epgItem.title + " " + epgItem.start + "-" + epgItem.end;
+            controlPanel.setCurrentEpgInfo(epgInfo);
             playbackManager.setLive24hMode(false);
             playbackManager.playShiyi(shiyiRange);
             showBottomEpg();
@@ -1284,10 +1289,12 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
         if (controlPanel != null && controlPanel.isShowing()) {
-            if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
-                return super.dispatchKeyEvent(event);
+            if (controlPanel.dispatchKeyEvent(event)) {
+                return true;
             }
-            controlPanel.hide();
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                controlPanel.hide();
+            }
             return super.dispatchKeyEvent(event);
         }
         if (event.getAction() == KeyEvent.ACTION_DOWN) {
@@ -1305,12 +1312,8 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
                         else playNext();
                         break;
                     case KeyEvent.KEYCODE_DPAD_LEFT:
-                        if (!isVOD) showSettingGroup();
-                        else showChannelInfo();
-                        break;
                     case KeyEvent.KEYCODE_DPAD_RIGHT:
-                        if (!isVOD) playNextSource();
-                        else showChannelInfo();
+                        if (controlPanel != null) controlPanel.show();
                         break;
                     case KeyEvent.KEYCODE_DPAD_CENTER:
                     case KeyEvent.KEYCODE_ENTER:
