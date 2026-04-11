@@ -35,7 +35,7 @@ public class LiveControlPanel {
     private SeekBar seekBar;
     private TextView tvProgramName;
     private TextView btnSpeed;
-    private TextView btnRotate;          // 新增旋转按钮
+    private TextView btnRotate;
     private TextView tvCurrentTime;
     private TextView tvTotalTime;
     private TextView btnPlayPause;
@@ -109,7 +109,8 @@ public class LiveControlPanel {
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 if (fromUser) {
                     updateTimeByProgress(progress);
-                    if (playbackManager.isLive24hMode()) {
+                    // 直播模式下（包括纯直播和已进入回放模式）都需要更新 EPG
+                    if (playbackManager.isLive24hMode() || playbackManager.getPlaybackType() == 0) {
                         long targetTime = getLiveTimeFromProgress(progress);
                         updateEpgByTime(targetTime);
                     }
@@ -524,7 +525,6 @@ public class LiveControlPanel {
     // ========== 焦点管理 ==========
     private void enterButtonFocusMode() {
         isButtonFocusMode = true;
-        // 默认焦点给倍速按钮
         btnSpeed.requestFocus();
     }
 
