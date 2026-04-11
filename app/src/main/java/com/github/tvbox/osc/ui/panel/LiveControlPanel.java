@@ -7,6 +7,7 @@ import android.os.Handler;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
+import android.view.MotionEvent;
 import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.SeekBar;
@@ -109,7 +110,6 @@ public class LiveControlPanel {
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 if (fromUser) {
                     updateTimeByProgress(progress);
-                    // 直播模式下（包括纯直播和已进入回放模式）都需要更新 EPG
                     if (playbackManager.isLive24hMode() || playbackManager.getPlaybackType() == 0) {
                         long targetTime = getLiveTimeFromProgress(progress);
                         updateEpgByTime(targetTime);
@@ -140,11 +140,14 @@ public class LiveControlPanel {
             }
         });
 
+        // 关键：不消费任何触摸事件，让子视图（按钮、进度条）和 Activity 自然处理
+        // 这样空白区域的垂直滑动会穿透到底层（亮度/音量调节），单击空白区域由 Activity 的 onSingleTap 隐藏面板
+        panelView.setOnTouchListener((v, e) -> false);
+
         container.addView(panelView, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
         panelView.setVisibility(View.GONE);
-        // 移除 panelView.setOnClickListener，避免拦截滑动事件；隐藏面板由 LivePlayActivity.onSingleTap 处理
         Log.d(TAG, "Control panel initialized");
     }
 
