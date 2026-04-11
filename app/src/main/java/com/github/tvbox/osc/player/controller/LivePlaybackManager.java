@@ -41,11 +41,10 @@ public class LivePlaybackManager {
     private int currentScale = 0;
     private int currentPlayerType = 0;
 
-    // 直播进度条模式（24小时窗口+分段衔接）
     private boolean isLive24hMode = false;
     private int currentSegmentIndex = -1;
     private long currentSegmentEndTime = 0;
-    private boolean isSegmentSeeking = false;  // 防止递归
+    private boolean isSegmentSeeking = false;
 
     private PlaybackListener listener;
 
@@ -122,7 +121,7 @@ public class LivePlaybackManager {
             case VideoView.STATE_PREPARING:
             case VideoView.STATE_ERROR:
             case VideoView.STATE_PLAYBACK_COMPLETED:
-                // 注意：自动衔接逻辑已移至控制面板的定时器中，这里只处理超时换源
+                // 自动衔接已移至控制面板定时器，此处只处理超时
                 startTimeoutTimer();
                 break;
         }
@@ -166,7 +165,6 @@ public class LivePlaybackManager {
     // ========== 播放核心 ==========
     public void playChannel(LiveChannelItem channel, boolean isChangeSource) {
         if (channel == null || videoView == null) return;
-        // 切换频道时重置24h模式
         setLive24hMode(false);
         if (isChangeSource && channel.getSourceNum() == 1) {
             if (listener != null) listener.onCurrentChannelChanged(channel, true);
@@ -184,10 +182,6 @@ public class LivePlaybackManager {
         if (listener != null) listener.onCurrentChannelChanged(channel, isChangeSource);
     }
 
-    /**
-     * 普通回放（由 EPG 点击或分段拖动触发）
-     * 注意：不重置 isLive24hMode，由调用者决定
-     */
     public void playShiyi(String shiyiTimeRange) {
         if (currentChannel == null || videoView == null) return;
         isShiyiMode = true;
@@ -344,13 +338,6 @@ public class LivePlaybackManager {
     public int getCurrentSegmentIndex() { return currentSegmentIndex; }
     public long getCurrentSegmentEndTime() { return currentSegmentEndTime; }
 
-    /**
-     * 获取播放类型
-     * 0: 纯直播（未时移，无固定时长）
-     * 1: 普通回放（EPG触发）
-     * 2: 点播（有固定时长）
-     * 3: 直播进度条模式（由拖动触发）
-     */
     public int getPlaybackType() {
         if (isShiyiMode && isLive24hMode) return 3;
         if (isShiyiMode) return 1;
@@ -358,9 +345,6 @@ public class LivePlaybackManager {
         return 0;
     }
 
-    /**
-     * 获取可拖动范围（毫秒），用于UI进度条最大值
-     */
     public long getDraggableRange() {
         if (isLive24hMode) {
             return LiveConstants.LIVE_REPLAY_WINDOW_MS;
@@ -371,9 +355,6 @@ public class LivePlaybackManager {
         }
     }
 
-    /**
-     * 获取当前播放的绝对时间（仅直播模式有效）
-     */
     public long getCurrentLiveTime() {
         if (!isShiyiMode) return System.currentTimeMillis();
         if (shiyiTime == null || !shiyiTime.contains("-")) return System.currentTimeMillis();
@@ -387,14 +368,9 @@ public class LivePlaybackManager {
         }
     }
 
-    /**
-     * 分段回放（用于直播进度条模式）
-     * @param targetTimeMs 目标绝对时间（毫秒）
-     * @param enable24hMode 是否开启直播24h模式（为true时会设置isLive24hMode=true）
-     */
     public void seekToLiveTimeSegment(long targetTimeMs, boolean enable24hMode) {
         if (isSegmentSeeking) {
-            isSegmentSeeking = false; // 防止递归
+            isSegmentSeeking = false;
             return;
         }
         if (enable24hMode) setLive24hMode(true);
@@ -406,7 +382,6 @@ public class LivePlaybackManager {
         int segmentIndex = (int) (offsetFromNow / LiveConstants.SEGMENT_DURATION_MS);
         segmentIndex = Math.min(segmentIndex, LiveConstants.SEGMENT_COUNT - 1);
 
-        // 固定长度分段：每个段严格8小时
         long segmentEnd;
         if (segmentIndex == 0) {
             segmentEnd = now;
@@ -430,9 +405,6 @@ public class LivePlaybackManager {
         isSegmentSeeking = false;
     }
 
-    /**
-     * 相对跳转（±10秒）
-     */
     public void seekRelative(int seconds) {
         if (isLive24hMode) {
             long currentLiveTime = getCurrentLiveTime();
