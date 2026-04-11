@@ -584,7 +584,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
                 return;
             }
             String shiyiRange = shiyiStartdate + "-" + shiyiEnddate;
-            // ========== 修改点：EPG 回放前重置直播进度条模式 ==========
+            // EPG 回放前重置直播进度条模式
             playbackManager.setLive24hMode(false);
             playbackManager.playShiyi(shiyiRange);
             showBottomEpg();
@@ -1284,12 +1284,17 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
         if (controlPanel != null && controlPanel.isShowing()) {
-            return true;
+            if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
+                return super.dispatchKeyEvent(event);
+            }
+            controlPanel.hide();
+            return super.dispatchKeyEvent(event);
         }
         if (event.getAction() == KeyEvent.ACTION_DOWN) {
             int code = event.getKeyCode();
-            if (code == KeyEvent.KEYCODE_MENU) showSettingGroup();
-            else if (!isListOrSettingLayoutVisible()) {
+            if (code == KeyEvent.KEYCODE_MENU) {
+                showSettingGroup();
+            } else if (!isListOrSettingLayoutVisible()) {
                 switch (code) {
                     case KeyEvent.KEYCODE_DPAD_UP:
                         if (Hawk.get(HawkConfig.LIVE_CHANNEL_REVERSE, false)) playNext();
@@ -1313,10 +1318,15 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
                         showChannelList();
                         break;
                     default:
-                        if (code >= KeyEvent.KEYCODE_0 && code <= KeyEvent.KEYCODE_9) code -= KeyEvent.KEYCODE_0;
-                        else if (code >= KeyEvent.KEYCODE_NUMPAD_0 && code <= KeyEvent.KEYCODE_NUMPAD_9) code -= KeyEvent.KEYCODE_NUMPAD_0;
-                        else break;
+                        if (code >= KeyEvent.KEYCODE_0 && code <= KeyEvent.KEYCODE_9) {
+                            code -= KeyEvent.KEYCODE_0;
+                        } else if (code >= KeyEvent.KEYCODE_NUMPAD_0 && code <= KeyEvent.KEYCODE_NUMPAD_9) {
+                            code -= KeyEvent.KEYCODE_NUMPAD_0;
+                        } else {
+                            break;
+                        }
                         numericKeyDown(code);
+                        break;
                 }
             }
         }
