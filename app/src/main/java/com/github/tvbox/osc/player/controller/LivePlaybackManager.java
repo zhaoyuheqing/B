@@ -10,9 +10,7 @@ import com.github.tvbox.osc.api.ApiConfig;
 import com.github.tvbox.osc.bean.LiveChannelItem;
 import com.github.tvbox.osc.bean.LivePlayerManager;
 import com.github.tvbox.osc.constant.LiveConstants;
-import com.github.tvbox.osc.util.EpgCacheHelper;
 import com.github.tvbox.osc.util.HawkConfig;
-import com.github.tvbox.osc.util.PlayerHelper;
 import com.orhanobut.hawk.Hawk;
 
 import org.json.JSONArray;
@@ -20,7 +18,6 @@ import org.json.JSONObject;
 
 import java.lang.ref.WeakReference;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
@@ -49,10 +46,6 @@ public class LivePlaybackManager {
     private long currentSegmentEndTime = 0;
     private boolean isSegmentSeeking = false;
 
-    // 底部栏信息缓存
-    private EpgCacheHelper epgCacheHelper;
-    private BottomBarInfo bottomBarInfo = new BottomBarInfo();
-
     private PlaybackListener listener;
 
     private final Runnable timeoutChangeSourceRun = this::handleTimeoutChangeSource;
@@ -71,80 +64,11 @@ public class LivePlaybackManager {
         void showControlPanel();
     }
 
-    public static class BottomBarInfo {
-        public int staticProgress = 0;
-        public String currentProgramTime = "--:-- - --:--";
-        public String remainingTime = "剩余 --:--:--";
-        public String decodeType = "硬解";
-        public String audioTrack = "立体声";
-        public boolean canShiyi = false;
-    }
-
     public LivePlaybackManager(@NonNull Context context, @NonNull Handler handler, @NonNull VideoView videoView) {
         this.contextRef = new WeakReference<>(context);
         this.mainHandler = handler;
         this.videoView = videoView;
         initController();
-    }
-
-    public void setEpgCacheHelper(EpgCacheHelper helper) {
-        this.epgCacheHelper = helper;
-    }
-
-    public void updateBottomBarInfo() {
-        if (bottomBarInfo == null) bottomBarInfo = new BottomBarInfo();
-        bottomBarInfo.decodeType = PlayerHelper.getPlayerName(getCurrentPlayerType());
-        bottomBarInfo.audioTrack = "立体声";
-        bottomBarInfo.canShiyi = currentChannel != null && currentChannel.getinclude_back();
-
-        if (currentChannel == null || epgCacheHelper == null) {
-            bottomBarInfo.staticProgress = 0;
-            bottomBarInfo.currentProgramTime = "--:-- - --:--";
-            bottomBarInfo.remainingTime = "剩余 --:--:--";
-            return;
-        }
-
-        String channelName = currentChannel.getChannelName();
-        Date now = new Date();
-        SimpleDateFormat sdf = LiveConstants.getGMT8Formatter(LiveConstants.DATE_FORMAT_YMD);
-        String today = sdf.format(now);
-        ArrayList<com.github.tvbox.osc.bean.Epginfo> epgList = epgCacheHelper.getCachedEpg(channelName, today);
-        if (epgList == null || epgList.isEmpty()) {
-            bottomBarInfo.staticProgress = 0;
-            bottomBarInfo.currentProgramTime = "--:-- - --:--";
-            bottomBarInfo.remainingTime = "剩余 --:--:--";
-            return;
-        }
-
-        com.github.tvbox.osc.bean.Epginfo currentEpg = null;
-        for (com.github.tvbox.osc.bean.Epginfo epg : epgList) {
-            if (now.after(epg.startdateTime) && now.before(epg.enddateTime)) {
-                currentEpg = epg;
-                break;
-            }
-        }
-
-        if (currentEpg != null) {
-            bottomBarInfo.currentProgramTime = currentEpg.start + " - " + currentEpg.end;
-            long remainingMs = currentEpg.enddateTime.getTime() - now.getTime();
-            if (remainingMs < 0) remainingMs = 0;
-            long remainingSec = remainingMs / 1000;
-            bottomBarInfo.remainingTime = String.format("剩余 %02d:%02d:%02d", remainingSec / 3600, (remainingSec % 3600) / 60, remainingSec % 60);
-            long totalMs = currentEpg.enddateTime.getTime() - currentEpg.startdateTime.getTime();
-            long elapsedMs = now.getTime() - currentEpg.startdateTime.getTime();
-            int progress = totalMs > 0 ? (int) (elapsedMs * 1000 / totalMs) : 0;
-            if (progress < 0) progress = 0;
-            if (progress > 1000) progress = 1000;
-            bottomBarInfo.staticProgress = progress;
-        } else {
-            bottomBarInfo.staticProgress = 0;
-            bottomBarInfo.currentProgramTime = "--:-- - --:--";
-            bottomBarInfo.remainingTime = "剩余 --:--:--";
-        }
-    }
-
-    public BottomBarInfo getBottomBarInfo() {
-        return bottomBarInfo;
     }
 
     private void initController() {
@@ -197,13 +121,7 @@ public class LivePlaybackManager {
             case VideoView.STATE_PREPARING:
             case VideoView.STATE_ERROR:
             case VideoView.STATE_PLAYBACK_COMPLETED:
-                if (isLive24hMode && currentSegmentIndex < LiveConstants.SEGMENT_COUNT - 1) {
-                    long nextStart = currentSegmentEndTime;
-                    if (nextStart < System.currentTimeMillis()) {
-                        seekToLiveTimeSegment(nextStart + 1000, true);
-                        return;
-                    }
-                }
+                // 自动衔接已移至控制面板定时器，此处只处理超时
                 startTimeoutTimer();
                 break;
         }
@@ -244,6 +162,7 @@ public class LivePlaybackManager {
 
     public void setListener(PlaybackListener listener) { this.listener = listener; }
 
+    // ========== 播放核心 ==========
     public void playChannel(LiveChannelItem channel, boolean isChangeSource) {
         if (channel == null || videoView == null) return;
         setLive24hMode(false);
@@ -310,6 +229,7 @@ public class LivePlaybackManager {
         }
     }
 
+    // ========== 时移工具 ==========
     public String[] buildShiyiUrls(String originalUrl, String shiyiTime) {
         String[] result = new String[2];
         String separator = originalUrl.contains("?") ? "&" : "?";
@@ -382,6 +302,7 @@ public class LivePlaybackManager {
         return header;
     }
 
+    // ========== 查询与生命周期 ==========
     public void seekTo(int position) { if (videoView != null) videoView.seekTo(position); }
     public long getCurrentPosition() { return videoView != null ? videoView.getCurrentPosition() : 0; }
     public long getDuration() { return videoView != null ? videoView.getDuration() : 0; }
@@ -405,6 +326,7 @@ public class LivePlaybackManager {
     public int getCurrentScale() { return currentScale; }
     public int getCurrentPlayerType() { return currentPlayerType; }
 
+    // ========== 直播24h模式管理 ==========
     public void setLive24hMode(boolean enabled) {
         this.isLive24hMode = enabled;
         if (!enabled) {
