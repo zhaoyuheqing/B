@@ -16,7 +16,6 @@ import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.ProgressBar;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -136,12 +135,6 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
     private LiveControlPanel controlPanel;
     private FrameLayout controlPanelContainer;
 
-    // 底部栏新控件
-    private ProgressBar pbStaticProgress;
-    private TextView tvDecode, tvAudioTrack, tvCanShiyi, tvRemainingTime, tvCurrentProgramTime;
-    private Handler bottomBarHandler = new Handler();
-    private Runnable bottomBarRunnable;
-
     boolean mIsDragging;
     boolean isVOD = false;
     boolean PiPON = Hawk.get(HawkConfig.BACKGROUND_PLAY_TYPE, 0) == 2;
@@ -160,7 +153,6 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
                             public void onAnimationEnd(Animator animation) {
                                 tvBottomLayout.setVisibility(View.INVISIBLE);
                                 tvBottomLayout.clearAnimation();
-                                stopBottomBarUpdater();
                             }
                         });
             }
@@ -301,17 +293,15 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
 
         mVideoView = findViewById(R.id.mVideoView);
         playbackManager = new LivePlaybackManager(this, mHandler, mVideoView);
-        playbackManager.setEpgCacheHelper(epgCacheHelper);
         playbackManager.setListener(new LivePlaybackManager.PlaybackListener() {
             @Override
-            public boolean onSingleTap(MotionEvent e) {
-                if (controlPanel != null && controlPanel.isShowing()) {
-                    controlPanel.hide();
-                    return true;
-                }
-                return handleSingleTap(e);
-            }
-
+public boolean onSingleTap(MotionEvent e) {
+    if (controlPanel != null && controlPanel.isShowing()) {
+        controlPanel.hide();
+        return true;
+    }
+    return handleSingleTap(e);
+}
             @Override
             public void onLongPress() {
                 showSettingGroup();
@@ -356,15 +346,6 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
             @Override
             public void onShiyiModeChanged(boolean isShiyi, String timeRange) {
                 showBottomEpg();
-                if (isShiyi) {
-                    pbStaticProgress.setVisibility(View.GONE);
-                    llSeekBar.setVisibility(View.VISIBLE);
-                    stopBottomBarUpdater();
-                } else {
-                    pbStaticProgress.setVisibility(View.VISIBLE);
-                    llSeekBar.setVisibility(View.GONE);
-                    startBottomBarUpdater();
-                }
             }
 
             @Override
@@ -405,24 +386,6 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
         mDivLeft = findViewById(R.id.mDivLeft);
         mEpgDateGridView = findViewById(R.id.mEpgDateGridView);
         mEpgInfoGridView = findViewById(R.id.mEpgInfoGridView);
-
-        // 底部栏新控件
-        pbStaticProgress = findViewById(R.id.pb_static_progress);
-        tvDecode = findViewById(R.id.tv_decode);
-        tvAudioTrack = findViewById(R.id.tv_audio_track);
-        tvCanShiyi = findViewById(R.id.tv_can_shiyi);
-        tvRemainingTime = findViewById(R.id.tv_remaining_time);
-        tvCurrentProgramTime = findViewById(R.id.tv_current_program_time);
-
-        // 初始化底部栏信息
-        playbackManager.updateBottomBarInfo();
-        LivePlaybackManager.BottomBarInfo info = playbackManager.getBottomBarInfo();
-        tvDecode.setText(info.decodeType);
-        tvAudioTrack.setText(info.audioTrack);
-        tvCanShiyi.setVisibility(info.canShiyi ? View.VISIBLE : View.GONE);
-        tvCurrentProgramTime.setText(info.currentProgramTime);
-        tvRemainingTime.setText(info.remainingTime);
-        pbStaticProgress.setProgress(info.staticProgress);
 
         // 设置面板
         LinearLayout tvRightSettingLayout = findViewById(R.id.tvRightSettingLayout);
@@ -542,32 +505,6 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
         mHandler.postDelayed(mUpdateLayout, 255);
     }
 
-    // ========== 底部栏定时器 ==========
-    private void startBottomBarUpdater() {
-        if (bottomBarRunnable != null) return;
-        bottomBarRunnable = () -> {
-            if (tvBottomLayout.getVisibility() == View.VISIBLE) {
-                playbackManager.updateBottomBarInfo();
-                LivePlaybackManager.BottomBarInfo info = playbackManager.getBottomBarInfo();
-                tvDecode.setText(info.decodeType);
-                tvAudioTrack.setText(info.audioTrack);
-                tvCanShiyi.setVisibility(info.canShiyi ? View.VISIBLE : View.GONE);
-                tvCurrentProgramTime.setText(info.currentProgramTime);
-                tvRemainingTime.setText(info.remainingTime);
-                pbStaticProgress.setProgress(info.staticProgress);
-            }
-            bottomBarHandler.postDelayed(this, 1000);
-        };
-        bottomBarHandler.post(bottomBarRunnable);
-    }
-
-    private void stopBottomBarUpdater() {
-        if (bottomBarRunnable != null) {
-            bottomBarHandler.removeCallbacks(bottomBarRunnable);
-            bottomBarRunnable = null;
-        }
-    }
-
     // ========== ChannelListListener 接口实现 ==========
     @Override
     public List<LiveChannelGroup> getChannelGroups() { return liveChannelGroupList; }
@@ -647,6 +584,7 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
                 return;
             }
             String shiyiRange = shiyiStartdate + "-" + shiyiEnddate;
+            // 设置 EPG 信息到控制面板
             String epgInfo = "正在播放：" + epgItem.title + " " + epgItem.start + "-" + epgItem.end;
             controlPanel.setCurrentEpgInfo(epgInfo);
             playbackManager.setLive24hMode(false);
@@ -731,7 +669,6 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
         mHandler.removeCallbacks(mHideChannelInfoRun);
         mHandler.postDelayed(mHideChannelInfoRun, LiveConstants.AUTO_HIDE_CHANNEL_INFO_MS);
         mHandler.postDelayed(mUpdateLayout, 255);
-        startBottomBarUpdater();
     }
 
     private void toggleChannelInfo() {
@@ -1414,7 +1351,6 @@ public class LivePlayActivity extends BaseActivity implements LiveChannelListPan
     }
     @Override protected void onDestroy() {
         super.onDestroy();
-        stopBottomBarUpdater();
         if (playbackManager != null) playbackManager.release();
         if (epgCacheHelper != null) epgCacheHelper.destroy();
         if (settingsPanel != null) settingsPanel.destroy();
